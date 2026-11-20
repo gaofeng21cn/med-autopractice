@@ -1,0 +1,18 @@
+{
+  "schema_version": "map-site-survey.v1",
+  "profile_id": "demo-site",
+  "systems": [
+    {"id": "demo-ehr", "role": "inpatient_ehr"}
+  ],
+  "operations": [
+    {
+      "dependency_id": "bind_inpatient",
+      "system_id": "demo-ehr",
+      "semantic_action": "核对合成界面中的就诊标识",
+      "mode": "read",
+      "state": "observed",
+      "evidence_refs": ["demo://evidence/encounter-overview"],
+      "qualification_ref": null
+    }
+  ]
+}

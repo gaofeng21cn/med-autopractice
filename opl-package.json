@@ -4,7 +4,7 @@
   "display_name": "Med Auto Practice",
   "description": "医生主导的临床资料整理、病历草拟与医嘱协作；当前提供规划及合成任务验证。",
   "publisher": "gaofeng21cn",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "source": "public_source_repo",
   "source_repo": "https://github.com/gaofeng21cn/med-autopractice-reference.git",
   "visibility": "public",
@@ -62,6 +62,15 @@
       "argv": [
         "python3",
         "scripts/map_runtime.py"
+      ],
+      "scope": "synthetic_only"
+    },
+    {
+      "entrypoint_id": "med-autopractice.demo",
+      "kind": "cli",
+      "argv": [
+        "python3",
+        "scripts/map_demo.py"
       ],
       "scope": "synthetic_only"
     }
@@ -150,9 +159,20 @@
       "SECURITY.md",
       "docs/public-scope.md",
       "scripts/public_release_check.py",
-      "NOTICE"
+      "NOTICE",
+      "AGENTS.md",
+      "assets/branding/generation-prompts.json",
+      "docs/adapter-development.md",
+      "docs/getting-started.md",
+      "examples/synthetic/custom_proposer.py",
+      "examples/synthetic/playbooks/open-overview.json",
+      "examples/synthetic/revise-orders.json",
+      "examples/synthetic/survey.json",
+      "scripts/map_demo.py",
+      "tests/fixtures/README.md",
+      "tests/fixtures/synthetic-history-collection.json"
     ],
-    "digest": "sha256:42495f66f9c77a2e74b3667afb9369f076c655a8c350051a887096dba5304af4"
+    "digest": "sha256:1556eb639769a4f3fd69141fa1cf2df64c8570dfc020fdc2df242d1e1444d292"
   },
   "management_scope": "local_product"
 }

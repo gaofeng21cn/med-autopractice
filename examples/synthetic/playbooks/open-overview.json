@@ -1,0 +1,19 @@
+{
+  "schema_version": "map-site-playbook.v1",
+  "playbook_id": "demo-open-overview",
+  "site_id": "demo-site",
+  "title": "查看合成就诊概览",
+  "systems": ["demo-ehr"],
+  "steps": [
+    {
+      "id": "open_overview",
+      "intent": "查看合成就诊示例",
+      "primitive": "kvm_click",
+      "target": "合成就诊概览",
+      "expect_text": "合成就诊标识",
+      "effect": "read_only",
+      "on_failure": "reobserve",
+      "state": "unverified"
+    }
+  ]
+}

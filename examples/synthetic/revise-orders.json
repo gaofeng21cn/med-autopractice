@@ -1,0 +1,11 @@
+{
+  "request_id": "demo-revise-orders",
+  "capability_id": "revise_orders",
+  "intent": "演示合成医嘱提案、提交前复核和系统回读",
+  "subject": {
+    "site_id": "demo-site",
+    "patient_id": "synthetic-demo-patient",
+    "encounter_id": "synthetic-demo-encounter"
+  },
+  "authority_ref": "demo://authority/synthetic"
+}

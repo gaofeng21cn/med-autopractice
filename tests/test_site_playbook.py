@@ -1,5 +1,8 @@
 import json
 from pathlib import Path
+import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -39,6 +42,28 @@ def playbook(**overrides):
 
 
 class SitePlaybookTests(unittest.TestCase):
+    def test_public_site_examples_run_through_read_only_cli(self):
+        examples = ROOT / "examples/synthetic"
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory)
+            shutil.copyfile(examples / "survey.json", target / "survey.json")
+            shutil.copytree(examples / "playbooks", target / "playbooks")
+            survey = subprocess.run(
+                [sys.executable, str(ROOT / "scripts/site_survey.py"), "--profile",
+                 str(target / "survey.json"), "--dependency", "bind_inpatient"],
+                capture_output=True, text=True, check=True,
+            )
+            self.assertEqual(json.loads(survey.stdout)["blockers"], ["bind_inpatient"])
+            book = subprocess.run(
+                [sys.executable, str(ROOT / "scripts/site_playbook.py"), "--survey",
+                 str(target / "survey.json"), "--playbooks", str(target / "playbooks"),
+                 "--playbook", "demo-open-overview"],
+                capture_output=True, text=True, check=True,
+            )
+            plan = json.loads(book.stdout)
+            self.assertFalse(plan["contains_write"])
+            self.assertEqual(plan["verified_steps"], 0)
+
     def test_valid_playbook_projects_an_ordered_plan(self):
         book = SitePlaybook(playbook(steps=[
             step("first"), step("second", primitive="kvm_wait", effect="reviewed_write"),

@@ -14,6 +14,18 @@
 
 > 当前已有项目骨架、独立医学提案路由、一期九项任务的通用依赖计划和使用合成数据的任务内核。产品通过可替换的 IP KVM 与医院系统适配工作；实际医院、厂家、版本和 UI 资格资料由部署方在仓库外配置，不属于开源源码。当前没有可调用的临床能力。
 
+## 快速上手
+
+使用 Python 3.10+ 运行完整的合成医嘱演示。演示包含草稿、模拟医生审批、模拟系统回读和最终验收。
+
+```sh
+git clone https://github.com/gaofeng21cn/med-autopractice-reference.git
+cd med-autopractice-reference
+python3 scripts/map_demo.py
+```
+
+使用方式见 [Codex 安装与分步演示](docs/getting-started.md)。接入方可从 [部署档案演练](docs/site-integration.md#运行合成部署示例) 和 [二次开发示例](docs/adapter-development.md) 开始。
+
 <table>
   <tr>
     <td width="33%" valign="top">
@@ -41,7 +53,7 @@
 
 **MAP 围绕这些日常工作组织能力。** 它的目标是把患者资料、医生意图、草稿、复核意见和系统结果联系起来，让一次任务能够继续推进、核对和恢复。
 
-MAP 通过 Codex 主 Skill 接收医生或其他 Codex Agent 的任务，不要求医生再使用一套独立界面。医生可以在 Codex 中审阅草稿和差异；首版仅通过 IP KVM 操作院内 Windows，不假设医院开放 API/CLI。MAP 可独立安装和调用，并遵循 OPL Agent Apps 的共用基座原则：可复用知识使用 Framework 公共来源入口，设备连接与凭证由原设备服务管理。具体复用范围与临床数据边界见[架构文档](docs/architecture.md#agent-共用基座)。
+MAP 通过 Codex 主 Skill 接收任务，使用者可在 Codex 中审阅草稿和差异。首版计划通过 IP KVM 适配医院系统。选择使用 Framework 知识来源或设备连接时，MAP 复用对应负责方的公共接口。[架构文档](docs/architecture.md#agent-共用基座)
 
 ## 希望怎样使用
 
@@ -135,49 +147,25 @@ MAP 与 `glkvm-native` 分仓维护：MAP 负责医院系统语义和临床流�
 | 带来源与覆盖范围的合成患者事实、KVM 界面原语、住院病历和医嘱调整合成验证 | 院方认可的患者资料存储、有效规则包和全部一期工作流 |
 | 只读项目检查、共享 KVM 服务状态入口、通用站点依赖模板及本地 profile 加载入口 | 具体部署的系统 profile、中文长文可靠回填、真实系统回读、获准的数据存储及临床验收 |
 
-当前版本为 **`0.0.2`**。能力目录中的临床能力均标记为 `planned`、`callable=false`；主 Skill 仅用于规划与合成开发，软件发行与临床能力资格分别管理。已接入 OPL Framework 公共知识来源的 direct-consumer 薄入口，提案修订保留 `knowledge_refs`。本仓库按公开源码和参考实现维护，不包含任何医院部署档案或真实患者资料。设备后端的实测范围与未解问题记录在[调研与证据](docs/research.md)。
+当前版本为 **`0.0.3`**。能力目录中的临床能力均标记为 `planned`、`callable=false`；主 Skill 仅用于规划与合成开发，软件发行与临床能力资格分别管理。已接入 OPL Framework 公共知识来源的 direct-consumer 薄入口，提案修订保留 `knowledge_refs`。本仓库按公开源码和参考实现维护，不包含任何医院部署档案或真实患者资料。设备后端的实测范围与未解问题记录在[调研与证据](docs/research.md)。
 
 ## 软件身份与公开源码
 
-软件目录中的正式名称为 **Med Auto Practice**，ID 为 `med-autopractice`，版本为 **0.0.2**。本仓库提供公开源码、通用合同、合成数据和只读检查入口。`opl-package.json` 保留软件身份和内容锁，当前使用 `development_only` 源码模式，不依赖私有 Package、私有 registry 或仓库外凭据。部署方可以在自己的受控载体中复用这些源码，但部署 profile、患者资料和证据仍须放在仓库外。详情见[公开范围与部署边界](docs/public-scope.md)和[软件管理与临床资格](docs/architecture.md#软件管理与临床资格)。
+软件目录中的正式名称为 **Med Auto Practice**，ID 为 `med-autopractice`，版本为 **0.0.3**。本仓库提供公开源码、通用合同、合成数据和只读检查入口。`opl-package.json` 保留软件身份和内容锁，当前使用 `development_only` 源码模式，不依赖私有 Package、私有 registry 或仓库外凭据。部署方可以在自己的受控载体中复用这些源码，但部署 profile、患者资料和证据仍须放在仓库外。详情见[公开范围与部署边界](docs/public-scope.md)和[软件管理与临床资格](docs/architecture.md#软件管理与临床资格)。
 
 `python3 scripts/project_status.py --json` 在源码或物化后的插件根中均可只读检查本包身份、版本、内容完整性及能力资格。软件可检查，与临床能力是否开放分别判断；当前临床能力仍为 `planned`、`callable=false`。卸载插件不触碰仓库外的部署 profile、患者资料及任务库。
 
 ## 本地开发起点
 
-使用 Python 3.10+，当前状态检查不需要第三方依赖，也不会连接设备或医院系统。
+从仓库根目录检查项目和运行测试。改造提案生成器时，可直接运行自定义示例。
 
 ```sh
-git clone https://github.com/gaofeng21cn/med-autopractice-reference.git
-cd med-autopractice-reference
 python3 scripts/project_status.py --json
+python3 examples/synthetic/custom_proposer.py
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-`python3 scripts/site_plan.py revise_orders` 可只读查看通用依赖模板的阻断项，不连接设备。部署方可用 `MAP_SITE_PROFILE=/absolute/path/to/private-profile.json` 指定仓库外的本地配置；测试仅用合成数据。Codex 主 Skill 的临床执行须在界面适配与验收后逐项开放。
-
-统一知识来源入口示例（不复制正文，不连接医院系统）：
-
-```sh
-python3 scripts/map_knowledge.py --workspace /path/to/workspace sources
-python3 scripts/map_knowledge.py --workspace /path/to/workspace --project /path/to/workspace/projects/example search --query "method" --limit 10
-python3 scripts/map_knowledge.py --workspace /path/to/workspace read-source --id owner.example
-```
-
-`scripts/map_runtime.py` 是主 Skill 调用的本地任务入口，当前只支持合成系统与 `demo-`／`synthetic-` 身份，没有连接院内配置的开关：
-
-```sh
-python3 scripts/map_runtime.py start --store /tmp/map-tasks.sqlite --request request.json
-python3 scripts/map_runtime.py show  --store /tmp/map-tasks.sqlite --task-id <task_id>
-```
-
-`scripts/structure_record.py` 把仓库外的采集包清洗成结构化病历，并进一步抽成可跨病例合并的研究数据集（固定列长表 + 归一化编码 + 研究阅读版）；规则、边界与命令见[病历收集与结构化](docs/clinical-record.md)和[研究数据集](docs/research-dataset.md)：
-
-```sh
-PYTHONPATH=src python3 scripts/structure_record.py \
-  --collection <私有采集包.json> --out-dir <私有目录> --record-id <id> \
-  --review-notes <私有核实注记.json>
-```
+可从合成病历采集包生成结构化记录和九张研究长表。[病历结构化示例](tests/fixtures/README.md)
 
 ```text
 agent/                         Agent 标识与当前建设状态
@@ -193,7 +181,8 @@ src/med_autopractice/
 rules/                         制度、模板与组套资产
 skills/med-autopractice/       唯一 Codex 主 Skill 源码
 assets/branding/               系列风格的品牌图与生成记录
-tests/fixtures/                合成或获准脱敏样例
+examples/synthetic/            合成任务、部署档案和扩展示例
+tests/fixtures/                合成病历样例
 ```
 
 ## 文档与开发路线

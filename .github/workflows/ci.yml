@@ -35,5 +35,7 @@ jobs:
         run: python3 scripts/project_status.py --json
       - name: Inspect generic site plan
         run: python3 scripts/site_plan.py revise_orders
+      - name: Run the custom proposer example
+        run: python3 examples/synthetic/custom_proposer.py
       - name: Run tests
         run: PYTHONPATH=src python3 -m unittest discover -s tests -v

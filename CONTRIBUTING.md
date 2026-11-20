@@ -10,6 +10,8 @@ Med Auto Practice 是面向医生主导临床工作的公开参考实现。贡�
 - 先运行 `python3 scripts/public_release_check.py`、`python3 scripts/project_status.py --json` 和完整测试。
 - 说明改动的范围、验证命令和仍未完成的临床资格边界。
 
+首次贡献可先跑合成医嘱任务，再修改自定义提案示例或演练站点适配。按影响范围参考 [快速上手](docs/getting-started.md) 与 [二次开发](docs/adapter-development.md)。
+
 ## Pull Request
 
 Pull Request 应保持一个清楚的目标，描述用户可见的规范或行为变化，并关联必要的测试或合成示例。涉及临床任务语义、权限、写入、回读或患者数据边界时，应同时更新对应的 owner 文档和失败条件。

@@ -59,6 +59,8 @@ def build_synthetic_runtime(
     store: TaskStore,
     audit: AuditSink,
     scenario: SyntheticScenario | None = None,
+    *,
+    knowledge: ClinicalKnowledge | None = None,
 ) -> tuple["TaskRuntime", SyntheticHospitalUI]:
     """Compose the synthetic-only runtime used for local acceptance checks."""
 
@@ -69,9 +71,8 @@ def build_synthetic_runtime(
         )
         for workflow in PHASE1_WORKFLOWS.values() if workflow.write_dependency
     }
-    engine = TaskEngine(SyntheticKnowledge(), system, audit,
-                        build_policies(expected_states), store)
-    return TaskRuntime(engine), ui
+    proposer = knowledge if knowledge is not None else SyntheticKnowledge()
+    return build_runtime(proposer, system, audit, store, expected_states), ui
 
 
 class TaskRuntime:

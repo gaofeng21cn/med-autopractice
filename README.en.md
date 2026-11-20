@@ -14,6 +14,26 @@ Med Auto Practice (MAP) is an agent for clinician-directed work across outpatien
 
 > **In development:** This repository contains separate medical-proposal routing, generic dependency plans for all nine phase-one workflows, and a synthetic-data task engine. Deployments use replaceable IP KVM and hospital-system adapters. Site names, vendors, versions, UI paths, and qualification evidence are configured by each deployment outside this source repository. No clinical workflow is callable.
 
+## Quick start
+
+Run a synthetic order task with Python 3.10+. The demo exercises drafting, simulated clinician approval, system readback, and final acceptance.
+
+```sh
+git clone https://github.com/gaofeng21cn/med-autopractice-reference.git
+cd med-autopractice-reference
+python3 scripts/map_demo.py
+```
+
+To add the development plugin to Codex, use a CLI version that supports plugin marketplaces.
+
+```sh
+codex plugin marketplace add https://github.com/gaofeng21cn/med-autopractice-reference.git --ref main
+codex plugin add med-autopractice@med-autopractice
+codex plugin list --marketplace med-autopractice --json
+```
+
+In a new Codex session, ask “Use Med Auto Practice to check its capabilities and run the synthetic order demo.” The [setup and walkthrough](docs/getting-started.md), [deployment examples](docs/site-integration.md#运行合成部署示例), and [adapter development guide](docs/adapter-development.md) provide further detail in Chinese.
+
 <p align="center">
   <img src="assets/branding/medautopractice-overview.png" alt="Med Auto Practice phase-one plan: clinical tasks, patient records, draft notes and orders, clinician review, system entry, and result verification; supported by patient and encounter binding, source and time, and access and review controls." width="100%" />
 </p>
@@ -63,20 +83,19 @@ Within MAP, `medicine/` produces evidence-linked candidate proposals and can sel
 
 ## Current Status
 
-Version **`0.0.2`** remains a development scaffold. The medical-proposal router and local task engine exercise audit, visible-content readback, and clinician acceptance with synthetic inpatient note and order cases. The thin direct-consumer adapter uses OPL Framework knowledge source APIs and preserves exact `knowledge_refs` when a proposal is revised. This repository provides generic contracts, synthetic validation, and a reference implementation. A synthetic-only SQLite store verifies restart recovery and uncertain-submission handling; it is not approved for patient data. The capability catalog marks every clinical capability as `planned` and `callable=false`. Deployment-specific adapters, target-system readback, and clinical acceptance remain outside this source repository and require separate qualification.
+Version **`0.0.3`** remains a development scaffold. The medical-proposal router and local task engine exercise audit, visible-content readback, and clinician acceptance with synthetic inpatient note and order cases. The thin direct-consumer adapter uses OPL Framework knowledge source APIs and preserves exact `knowledge_refs` when a proposal is revised. This repository provides generic contracts, synthetic validation, and a reference implementation. A synthetic-only SQLite store verifies restart recovery and uncertain-submission handling; it is not approved for patient data. The capability catalog marks every clinical capability as `planned` and `callable=false`. Deployment-specific adapters, target-system readback, and clinical acceptance remain outside this source repository and require separate qualification.
 
 ## Software identity and public source
 
-The catalog uses **Med Auto Practice** as the display name and `med-autopractice` as its stable Package and plugin ID, at version **0.0.2**. This repository provides public source, generic contracts, synthetic data, and read-only inspection commands. `opl-package.json` retains the software identity and content lock in `development_only` source mode. The local verification commands run from a source checkout. Deployment teams may reuse the source in a controlled carrier, while site profiles, patient data, and evidence remain outside this repository. See [public scope and deployment boundary](docs/public-scope.md) and [software management and clinical qualification](docs/architecture.md#软件管理与临床资格).
+The catalog uses **Med Auto Practice** as the display name and `med-autopractice` as its stable Package and plugin ID, at version **0.0.3**. This repository provides public source, generic contracts, synthetic data, and read-only inspection commands. `opl-package.json` retains the software identity and content lock in `development_only` source mode. The local verification commands run from a source checkout. Deployment teams may reuse the source in a controlled carrier, while site profiles, patient data, and evidence remain outside this repository. See [public scope and deployment boundary](docs/public-scope.md) and [software management and clinical qualification](docs/architecture.md#软件管理与临床资格).
 
 `python3 scripts/project_status.py --json` works from the source tree or a materialized plugin root and reports package integrity and clinical qualification separately. Software inspection does not change `planned`, `callable=false` clinical capabilities. Removing the plugin preserves external deployment profiles, patient records, and task stores.
 
-The local status command checks project metadata only. It does not connect to a device or hospital system:
+From the checkout, inspect the project, run the example proposer, or check the generic site plan.
 
 ```sh
-git clone https://github.com/gaofeng21cn/med-autopractice-reference.git
-cd med-autopractice-reference
 python3 scripts/project_status.py --json
+python3 examples/synthetic/custom_proposer.py
 python3 scripts/site_plan.py revise_orders
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```

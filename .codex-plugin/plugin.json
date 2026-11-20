@@ -1,6 +1,6 @@
 {
   "name": "med-autopractice",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Codex clinical workflow agent for clinician-directed records, orders, notes, and discharge review. Source scaffold only.",
   "author": {
     "name": "Gao Feng",
@@ -19,6 +19,6 @@
     "websiteURL": "https://github.com/gaofeng21cn/med-autopractice-reference",
     "composerIcon": "./assets/branding/medautopractice-logo.png",
     "logo": "./assets/branding/medautopractice-logo.png",
-    "defaultPrompt": ["查看 MAP 当前可用能力和下一步接入条件。"]
+    "defaultPrompt": ["查看 MAP 能力状态并运行合成医嘱演示。"]
   }
 }

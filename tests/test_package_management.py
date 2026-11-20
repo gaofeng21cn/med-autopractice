@@ -32,6 +32,16 @@ class PackageManagementTests(unittest.TestCase):
             help_result = subprocess.run([sys.executable, str(target / "scripts/map_runtime.py"), "--help"],
                                          cwd=target.parent, capture_output=True, text=True, check=True)
             self.assertIn("synthetic", help_result.stdout)
+            demo = subprocess.run(
+                [sys.executable, str(target / "scripts/map_demo.py")],
+                cwd=target.parent, capture_output=True, text=True, check=True,
+            )
+            view = json.loads(demo.stdout)
+            self.assertEqual(view["mode"], "synthetic")
+            self.assertEqual(view["statuses"], [
+                "needs_pre_submit_review", "needs_clinician_acceptance", "accepted",
+            ])
+            self.assertEqual(view["readback"]["object_ref"], "demo://ui/object/1")
 
     def test_materialized_package_rejects_changed_content(self):
         with tempfile.TemporaryDirectory(prefix="map-package-") as temporary:

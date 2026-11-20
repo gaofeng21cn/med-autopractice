@@ -1,4 +1,4 @@
 interface:
   display_name: "Med Auto Practice"
   short_description: "临床工作 Agent：当前为开发骨架"
-  default_prompt: "使用 Med Auto Practice，先核对当前能力状态和任务范围。"
+  default_prompt: "使用 Med Auto Practice 查看能力状态并运行合成医嘱演示。"

@@ -39,6 +39,24 @@ python3 scripts/site_plan.py --profile \
 
 详细的页面路径、语义操作、读取字段、恢复方式和证据保留信息目前应放在同一仓库外部署目录中的独立私有资料；`site_plan.py` 尚不读取这些 UI 说明。后续适配器必须增加经过版本化的操作 profile schema 和验证后，才可用机器读取这些内容。`observed` 仅代表观察到界面；`qualified` 需要明确资格证据，但仍不等于 `contracts/capabilities.json` 中的能力已开放。
 
+## 运行合成部署示例
+
+在源码根目录执行以下命令。通用依赖模板、合成调研档案和操作样例会复制到同一个仓库外目录，供只读工具检查。
+
+```sh
+map_site_dir=$(mktemp -d)
+cp contracts/site-dependencies.json "$map_site_dir/site-profile.json"
+cp examples/synthetic/survey.json "$map_site_dir/survey.json"
+cp -R examples/synthetic/playbooks "$map_site_dir/playbooks"
+
+python3 scripts/site_plan.py --profile "$map_site_dir/site-profile.json" revise_orders
+python3 scripts/site_survey.py --profile "$map_site_dir/survey.json" --dependency bind_inpatient
+python3 scripts/site_playbook.py --survey "$map_site_dir/survey.json" \
+  --playbooks "$map_site_dir/playbooks" --playbook demo-open-overview
+```
+
+计划会列出未配置的依赖，调研档案中的 `bind_inpatient` 处于 `observed`，操作清单中的合成步骤处于 `unverified`。三个命令都只读取本地文件。自己的部署从同一份通用依赖模板起步，保留工作流依赖 ID，并在真实资格档案里记录经验证的来源与证据。[站点调研流程](site-survey.md)
+
 ## Git 防误提交措施
 
 - 使用 `.gitignore` 拦截本地 profile、现场档案和现场截图的常见路径。

@@ -7,7 +7,9 @@ description: 使用 Med Auto Practice（MAP）处理医生主导的既往病历�
 
 这是 MAP 的 Codex 主 Skill，也是将来其他 Codex Agent 调用 MAP 的入口。Skill 负责识别医生任务、选择能力和组织复核；任务状态、字段校验、审计和医院系统操作由 MAP 代码及获准适配器承担。MAP 可独立安装和调用，并遵循 OPL Agent Apps 的共用基座原则：通用知识走 Framework 来源接口，设备连接和凭证走原设备 owner，其他外部连接按实际 capability 复用 Connect。实际与待接入边界见 [Agent 共用基座](../../docs/architecture.md#agent-共用基座)。
 
-先定位 MAP 内容根：显式设置 `MAP_SOURCE_ROOT` 时使用该目录；否则检查本 Skill 上两级的插件根，须同时包含 `opl-package.json`（`package_id=med-autopractice`）、`contracts/capabilities.json` 与 `scripts/project_status.py`。原生插件携带这些代码和合同，不依赖开发者机器上的固定源码路径。若宿主只安装了独立 Skill，先定位用户提供的 MAP 源码目录并核对 Git remote 为 `gaofeng21cn/med-autopractice-reference`，再继续。用 `python3 scripts/project_status.py --json` 回读产品 ID、版本、内容完整性及能力资格；安装完成只表示软件可管理，不表示临床执行已开放。源码合同与默认 profile 不包含任何医院特定配置；所有临床能力在公开目录中默认 `planned`、`callable=false`。本地存在部署 profile、连通 KVM 或看见业务页面都不等于通过系统验收；开发验证以合成数据为主。
+先定位 MAP 内容根。用户已显式指定 `MAP_SOURCE_ROOT` 时使用该目录，否则使用本 Skill 上两级的插件根。独立 Skill 可使用用户提供并确认的源码 checkout，包括自有 fork。核对根目录的 `opl-package.json`（`package_id=med-autopractice`）、`contracts/capabilities.json` 与 `scripts/project_status.py`，用 `python3 scripts/project_status.py --json` 回读身份、版本、内容完整性和能力状态。公开能力目录中的真实临床能力为 `planned`、`callable=false`。
+
+用户要求入门、试跑或验证安装时，从内容根执行 `python3 scripts/map_demo.py`。该命令使用固定合成请求，自动走完模拟审批、回读和验收。向用户报告 `mode`、状态序列及回读对象。需要分步体验、部署演练或自定义提案时，参阅[快速上手](../../docs/getting-started.md)。
 
 接入后的任务顺序为：锁定患者和本次就诊，按业务工作流要求读取带来源与时间的事实，调用独立医学知识组件形成带生成者版本的提案，执行获准的系统操作，回读院内对象及一手截图，交医生接受或提出修订。医学模型可按能力分别配置，但不接收医院界面写入权限；工作流不得擅自改写医学提案。医嘱、组套发布等临床关键变更在提交前核对医生对确切提案的批准；提交后仍需医生最终验收。不得编造临床事件或把点击成功当作系统结果。
 
