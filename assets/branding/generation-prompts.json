@@ -1,0 +1,31 @@
+{
+  "product": "Med Auto Practice",
+  "created_on": "2026-09-22",
+  "method": "Built-in image_gen; reference-guided generation",
+  "references": [
+    {
+      "project": "Med Auto Science",
+      "files": [
+        "medautoscience-logo.png",
+        "medautoscience-overview-v3.png"
+      ]
+    },
+    {
+      "project": "Med Auto Grant",
+      "files": [
+        "medautogrant-logo.png"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "file": "medautopractice-logo.png",
+      "prompt": "Use case: logo-brand.\nCreate ONE new square logo image for Med Auto Practice (MAP), a clinical workflow Agent in the same product family as the two reference logos.\nInput images are STYLE REFERENCES ONLY: reference 1 Med Auto Science logo; reference 2 Med Auto Grant logo. Keep their recognizable family visual language: white rounded square app tile, subtle very pale blue dot paper texture, soft restrained shadow, bold dark navy/near-black rounded outlines, segmented circular outer ring in navy, teal and bright blue with a small gold ring junction.\nReplace the central symbol with a DISTINCTIVE simple clinical clipboard plus a compact teal stethoscope curved around its lower right corner, with a small gold check mark medallion indicating clinician review. The clipboard has just two short abstract lines. Prioritize one coherent, balanced icon readable at 132px. The central clipboard and stethoscope must be clearly distinguishable from both paper-sheet reference icons. Flat hand-inked, lightly colored-pencil texture matching references, polished spacing. No text, no letters, no watermark, no extra graphic panels. White opaque background, generous safe margins, 1024x1024."
+    },
+    {
+      "file": "medautopractice-overview.png",
+      "prompt": "Use case: text-localization.\nEdit this Med Auto Practice infographic. Keep the existing hand-drawn illustration style, white dotted paper, fine pencil hatching, black ink outlines, teal/blue/gold colors, six cards, arrows, icons and three supporting cards. Replace ALL Chinese text with ENGLISH ONLY. Every label must be hand-lettered, matching the casual black ink title; do NOT use printed sans-serif typography. Clean, legible lettering with generous spacing. Preserve the brand title \"Med Auto Practice\".\nExact replacement copy:\nSubtitle: \"From clinical intent to verified workflows\"\nSix main cards, left to right (use short stacked lines to fit):\n1 \"Clinical\" / \"Tasks\"\n2 \"Patient\" / \"Records\"\n3 \"Draft Notes\" / \"& Orders\"\n4 \"Clinician\" / \"Review\"\n5 \"System\" / \"Entry\"\n6 \"Result\" / \"Verification\"\nThree supporting cards below, left to right:\n\"Patient & Encounter\"\n\"Source & Time\"\n\"Access & Review\"\nBottom slogan: \"AI moves work forward. Clinicians make the key decisions.\"\nFooter badge: \"Phase 1 Plan · In Development\"\nRemove every Chinese character from the image. Do not add new words. Keep illustrations and layout consistent with the reference. This is a polished hand-drawn product-family infographic for a GitHub README, NOT a UI mockup. Keep whole diagram within the frame.",
+      "language": "English; Chinese README retained"
+    }
+  ]
+}

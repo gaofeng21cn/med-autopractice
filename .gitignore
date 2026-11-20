@@ -1,0 +1,44 @@
+# 本地开发
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+build/
+dist/
+*.egg-info/
+.codegraph/
+# 私密配置与运行态（不得用这些路径存放待提交样例）
+.env
+.env.*
+!.env.example
+*.local.json
+credentials/
+secrets/
+state/
+runtime/
+data/
+patients/
+captures/
+logs/
+*.sqlite
+*.sqlite3
+*.db
+
+# Deployment-specific inventories and UI evidence belong outside this source
+# repository. These patterns are only a safety net against accidental adds.
+/site-local/
+/site-profiles-local/
+/private-site/
+/evidence/site/
+/captures/site/
+/docs/site-systems.local.md
+/docs/site-systems.md
+/docs/research.local.md
+/contracts/site-dependencies.local.json
+**/site-profile*.json
+**/*-site-profile.json
+**/site-evidence/
+**/ui-qualification/

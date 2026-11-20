@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://med-auto-practice.local/contracts/structured-clinical-record.v1",
+  "title": "MAP structured clinical record",
+  "description": "Cleaned, reviewable clinical record built from one private document collection. Contains per-section provenance, explicit gaps and explicit conflicts; never fills a missing field from general knowledge. Records hold patient content, so they are stored outside the source repository.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "record_id", "patient", "encounters"],
+  "properties": {
+    "schema_version": {"const": "map-structured-clinical-record.v1"},
+    "record_id": {"type": "string", "minLength": 1},
+    "profile_id": {"type": ["string", "null"]},
+    "built_from": {
+      "type": "object",
+      "properties": {
+        "collection_schema": {"type": ["string", "null"]},
+        "collected_at": {"type": ["string", "null"]},
+        "collection_mode": {"type": ["string", "null"]},
+        "document_precedence": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Review order used when two documents describe the same section; not an overwrite rule."
+        }
+      }
+    },
+    "patient": {
+      "type": "object",
+      "description": "Deployment-held patient identifiers. Stored outside the repository."
+    },
+    "source_system": {"type": "object"},
+    "document_semantics": {
+      "type": "object",
+      "description": "What each document type does and does not contain, including date semantics."
+    },
+    "prior_history_outside_this_hospital": {"type": "array", "items": {"type": "string"}},
+    "encounters": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/encounter"}
+    },
+    "gaps": {"type": "array", "items": {"type": "string"}},
+    "verification": {"type": "object"}
+  },
+  "$defs": {
+    "encounter": {
+      "type": "object",
+      "required": ["encounter_id", "admission", "discharge", "sections", "provenance",
+                   "missing", "conflicts"],
+      "properties": {
+        "encounter_id": {"type": "string", "minLength": 1},
+        "department": {"type": ["string", "null"]},
+        "bed_no": {"type": ["string", "null"]},
+        "admission": {
+          "type": "object",
+          "required": ["datetime"],
+          "properties": {"datetime": {"type": "string", "minLength": 10}}
+        },
+        "discharge": {
+          "type": "object",
+          "required": ["datetime", "calendar_date", "observations"],
+          "properties": {
+            "datetime": {"type": "string", "minLength": 10},
+            "calendar_date": {"type": "string", "minLength": 10},
+            "observations": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["source", "datetime"],
+                "properties": {
+                  "source": {"type": ["string", "null"]},
+                  "datetime": {"type": ["string", "null"]},
+                  "calendar_date": {"type": ["string", "null"]}
+                }
+              }
+            }
+          }
+        },
+        "length_of_stay_days": {"type": ["integer", "number", "string", "null"]},
+        "sections": {
+          "type": "object",
+          "required": ["chief_complaint", "admission_situation", "admission_diagnoses",
+                       "positive_findings", "hospital_course", "discharge_diagnoses",
+                       "discharge_status", "discharge_orders", "discharge_medications"],
+          "additionalProperties": {"$ref": "#/$defs/section"}
+        },
+        "provenance": {"$ref": "#/$defs/provenance"},
+        "missing": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["field", "reason"],
+            "properties": {
+              "field": {"type": "string", "minLength": 1},
+              "reason": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        "conflicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["field", "values", "resolution"],
+            "properties": {
+              "field": {"type": "string", "minLength": 1},
+              "values": {
+                "type": "array",
+                "minItems": 2,
+                "items": {
+                  "type": "object",
+                  "required": ["source", "value"],
+                  "properties": {
+                    "source": {"type": ["string", "null"]},
+                    "value": {"type": "string", "minLength": 1}
+                  }
+                }
+              },
+              "same_calendar_date": {"type": "boolean"},
+              "resolution": {
+                "enum": ["kept_both_review_required", "kept_documented_value"],
+                "description": "Conflicts are never auto-resolved by overwriting a value."
+              },
+              "note": {"type": "string"}
+            }
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["document", "basis"],
+      "properties": {
+        "document": {"type": ["string", "null"]},
+        "document_created_at": {"type": ["string", "null"]},
+        "author": {"type": ["string", "null"]},
+        "basis": {
+          "enum": ["only_read_document", "document_precedence", "unverified"],
+          "description": "How the section's document was chosen. document_precedence means several documents were readable and the review order in built_from.document_precedence applied; only_read_document means exactly one was readable; unverified means none was."
+        },
+        "notes": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "section": {
+      "type": "object",
+      "required": ["provenance"],
+      "properties": {
+        "text": {"type": ["string", "null"]},
+        "items": {"type": "array"},
+        "unparsed": {"type": "array", "items": {"type": "string"}},
+        "provenance": {"$ref": "#/$defs/provenance"}
+      }
+    }
+  }
+}

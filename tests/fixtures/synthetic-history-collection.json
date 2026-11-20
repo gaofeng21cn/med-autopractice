@@ -1,0 +1,95 @@
+{
+  "schema_version": "map-history-record.v1",
+  "site_id": "synthetic-site",
+  "collected_at": "2030-09-04T10:00:00+08:00",
+  "collection_mode": "read_only_ip_kvm",
+  "patient": {
+    "name": "合成样例患者",
+    "gender": "男",
+    "birth_date": "1973-02-01",
+    "inpatient_no": "SYNTH-REF-001",
+    "synthetic": true
+  },
+  "source": {
+    "system_id": "synthetic-emr",
+    "role": "synthetic-role",
+    "screen_resolution": "1920x1080"
+  },
+  "document_semantics": {
+    "出院记录": "同一就诊下最完整的文书。",
+    "疾病证明书": "证明类文书，信息量较少。"
+  },
+  "prior_history_outside_this_hospital": [
+    "2029-02 外院行示例手术，术后定期复查。"
+  ],
+  "encounters": [
+    {
+      "seq": 1,
+      "type": "住院",
+      "department": "合成科室",
+      "bed_no": "A3",
+      "admission_datetime": "2030-06-04 08:24",
+      "discharge_datetime": "2030-06-10 13:20",
+      "actual_los_days": 6,
+      "chief_complaint": "示例主诉：间断不适三周。",
+      "admission_status": "模拟就诊，入院原因见合成主诉。",
+      "admission_diagnoses": [
+        "1.示例诊断甲2.示例诊断乙3.示例合并症戊4.示例慢性病丙"
+      ],
+      "positive_findings": {
+        "2030-06-05 示例影像": "示例检查所见甲",
+        "2030-06-06 示例化验": "示例检查所见乙"
+      },
+      "course_summary": "入院后完善检查，于 2030-06-07 行示例手术，操作结果为合成测试文本。",
+      "discharge_diagnoses": [
+        "1.示例诊断甲2.示例诊断乙3.示例新发症己4.示例诊断乙5.示例慢性病丙"
+      ],
+      "discharge_status": "合成文书记录离院时情况稳定。",
+      "discharge_advice": [
+        "1.注意休息，避免劳累。",
+        "2.如有不适及时就诊。"
+      ],
+      "discharge_medications": [
+        "示例药甲片 10 mg 口服 每天一次 总量 7片",
+        "（示例药乙按既往用药继续服用）"
+      ],
+      "external_observations": [
+        {
+          "source": "inpatient_list",
+          "admission_datetime": "2030-06-04 08:24:22",
+          "discharge_datetime": "2030-06-10 14:52:17"
+        }
+      ],
+      "documents": {
+        "疾病证明书": {"created_at": "2030-06-10 13:45", "author": "合成医师甲", "content_read": true},
+        "出院记录": {"created_at": "2030-06-11 08:56", "author": "合成医师甲", "content_read": true}
+      }
+    },
+    {
+      "seq": 2,
+      "type": "住院",
+      "department": "合成科室",
+      "admission_date": "2030-09-01",
+      "admission_time": "09:10",
+      "discharge_date": "2030-09-03",
+      "length_of_stay_days": 2,
+      "chief_complaint": "示例主诉：术后复查。",
+      "admission_diagnoses": "1.示例诊断甲（术后）2.示例慢性病丙",
+      "course_summary": "入院后复查，未见异常，予出院。",
+      "discharge_diagnoses": "1.示例诊断甲（术后）2.示例慢性病丙",
+      "discharge_advice": ["1.定期门诊随访。"],
+      "discharge_medications": [],
+      "external_observations": [
+        {
+          "source": "inpatient_list",
+          "discharge_datetime": "2030-09-04 09:00"
+        }
+      ],
+      "documents": {
+        "疾病证明书": {"created_at": "2030-09-03 11:00", "author": "合成医师乙", "content_read": true}
+      }
+    }
+  ],
+  "gaps": ["合成样例：仅用于单元测试。"],
+  "verification": {"read_only": true, "no_writes_performed": true}
+}

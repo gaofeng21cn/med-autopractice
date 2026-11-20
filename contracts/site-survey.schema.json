@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://med-auto-practice.local/contracts/site-survey.v1",
+  "title": "MAP private site UI survey pack",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "profile_id", "systems", "operations"],
+  "properties": {
+    "schema_version": {"const": "map-site-survey.v1"},
+    "profile_id": {"type": "string", "minLength": 1},
+    "systems": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "role"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "role": {"type": "string", "minLength": 1},
+          "product_ref": {"type": ["string", "null"]},
+          "version_ref": {"type": ["string", "null"]},
+          "environment": {"type": ["string", "null"]},
+          "access_ref": {"type": ["string", "null"]}
+        }
+      }
+    },
+    "operations": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["dependency_id", "system_id", "semantic_action", "mode", "state"],
+        "properties": {
+          "dependency_id": {"type": "string", "minLength": 1},
+          "system_id": {"type": "string", "minLength": 1},
+          "semantic_action": {"type": "string", "minLength": 1},
+          "mode": {"enum": ["read", "draft_write", "reviewed_write"]},
+          "state": {"enum": ["unmapped", "observed", "qualified", "revoked"]},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "qualification_ref": {"type": ["string", "null"]},
+          "notes_ref": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

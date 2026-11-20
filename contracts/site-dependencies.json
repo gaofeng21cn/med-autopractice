@@ -1,0 +1,292 @@
+{
+  "schema_version": "map-site-dependencies.v1",
+  "profile_id": "generic-unconfigured",
+  "systems": [
+    {
+      "id": "portal",
+      "role": "unified_clinical_portal",
+      "vendor": null,
+      "version": null
+    },
+    {
+      "id": "inpatient_ehr",
+      "role": "inpatient_his_emr",
+      "vendor": null,
+      "version": null
+    },
+    {
+      "id": "laboratory",
+      "role": "laboratory_information_system",
+      "vendor": null,
+      "version": null
+    },
+    {
+      "id": "imaging",
+      "role": "imaging_report_system",
+      "vendor": null,
+      "version": null
+    },
+    {
+      "id": "infection_surveillance",
+      "role": "infection_surveillance_system",
+      "vendor": null,
+      "version": null
+    },
+    {
+      "id": "transfusion",
+      "role": "transfusion_management_system",
+      "vendor": null,
+      "version": null
+    }
+  ],
+  "dependencies": [
+    {
+      "id": "bind_inpatient",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "bind_outpatient",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_inpatient_records",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_outpatient_records",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_current_orders",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_allergies",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_nursing_records",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_lab_results",
+      "owner": "adapter",
+      "system_id": "laboratory",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_imaging_reports",
+      "owner": "adapter",
+      "system_id": "imaging",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_discharge_records",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_discharge_plan",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_document_status",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_order_sets",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_local_catalog",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "save_inpatient_note_draft",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "readback_inpatient_note",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "save_outpatient_note_draft",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "readback_outpatient_note",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "enter_inpatient_orders",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "readback_inpatient_orders",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "write_order_set",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "readback_order_set",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "save_discharge_review",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "readback_discharge_review",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_infection_alert_context",
+      "owner": "adapter",
+      "system_id": "infection_surveillance",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_transfusion_context",
+      "owner": "adapter",
+      "system_id": "transfusion",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "clinical_proposal",
+      "owner": "medicine",
+      "system_id": null,
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "institutional_document_rules",
+      "owner": "rules",
+      "system_id": null,
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "approved_order_set_rules",
+      "owner": "rules",
+      "system_id": null,
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "local_medicine_dictionary",
+      "owner": "rules",
+      "system_id": null,
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "discharge_audit_rules",
+      "owner": "rules",
+      "system_id": null,
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    }
+  ]
+}

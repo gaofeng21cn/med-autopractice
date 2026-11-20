@@ -1,0 +1,11 @@
+[project]
+name = "med-autopractice"
+version = "0.0.2"
+description = "Med Auto Practice: clinical workflow Agent source scaffold"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.uv]
+package = false

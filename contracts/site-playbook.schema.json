@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://med-auto-practice.local/contracts/site-playbook.v1",
+  "title": "MAP private site playbook",
+  "description": "An ordered, site-specific operating procedure stored outside the source repository; never contains credentials or patient data.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "playbook_id", "site_id", "title", "systems", "steps"],
+  "properties": {
+    "schema_version": {"const": "map-site-playbook.v1"},
+    "playbook_id": {"type": "string", "minLength": 1},
+    "site_id": {"type": "string", "minLength": 1},
+    "title": {"type": "string", "minLength": 1},
+    "purpose": {"type": "string"},
+    "systems": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "preconditions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "account_ref": {"type": ["string", "null"]},
+    "evidence_dir_ref": {"type": ["string", "null"]},
+    "revision_ref": {"type": ["string", "null"]},
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "intent", "primitive", "expect_text", "effect", "on_failure"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1},
+          "intent": {"type": "string", "minLength": 1},
+          "primitive": {
+            "enum": [
+              "kvm_observe", "kvm_wait", "kvm_click", "kvm_double_click",
+              "kvm_type_ascii", "kvm_keys", "kvm_scroll", "kvm_drag",
+              "browser_autofill_select", "human_action", "human_handoff"
+            ]
+          },
+          "target": {"type": ["string", "null"]},
+          "region_hint": {
+            "anyOf": [
+              {
+                "type": "array",
+                "minItems": 4,
+                "maxItems": 4,
+                "items": {"type": "integer", "minimum": 0, "maximum": 8192}
+              },
+              {"type": "null"}
+            ]
+          },
+          "expect_text": {"type": "string", "minLength": 1},
+          "effect": {"enum": ["read_only", "draft_write", "reviewed_write"]},
+          "on_failure": {"enum": ["stop", "retry_once", "handoff", "reobserve"]},
+          "state": {
+            "enum": ["unverified", "verified", "revoked"],
+            "description": "verified = reproduced on this deployment; unverified = documented but not yet reproduced here (default); revoked = worked before and no longer valid."
+          },
+          "evidence": {"enum": ["none", "ref", "screenshot_ref"]},
+          "notes_ref": {"type": ["string", "null"]}
+        }
+      }
+    }
+  }
+}

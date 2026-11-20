@@ -1,0 +1,37 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "med-autopractice",
+  "version": "0.0.2",
+  "description": "Codex clinical workflow agent for clinician-directed records, orders, notes, and discharge review. Source scaffold only.",
+  "author": {
+    "name": "Gao Feng",
+    "url": "https://github.com/gaofeng21cn"
+  },
+  "repository": "https://github.com/gaofeng21cn/med-autopractice-reference",
+  "keywords": [
+    "clinical-workflow",
+    "codex",
+    "medical-records",
+    "domain-agent"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Med Auto Practice",
+        "shortDescription": "临床任务 Agent，当前为开发骨架。",
+        "longDescription": "面向医生的病历资料、医嘱协作、病历记录与出院质控任务；当前未接入医院系统，不执行真实临床操作。",
+        "developerName": "Gao Feng",
+        "category": "Productivity",
+        "capabilities": [
+          "Interactive"
+        ],
+        "websiteURL": "https://github.com/gaofeng21cn/med-autopractice-reference",
+        "composerIcon": "./assets/branding/medautopractice-logo.png",
+        "logo": "./assets/branding/medautopractice-logo.png",
+        "defaultPrompt": [
+          "查看 MAP 当前可用能力和下一步接入条件。"
+        ]
+      }
+    }
+  }
+}

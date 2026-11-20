@@ -1,0 +1,26 @@
+{
+  "schema_version": "map-scaffold.v1",
+  "agent_id": "med-autopractice",
+  "display_name": "Med Auto Practice",
+  "short_name": "MAP",
+  "version": "0.0.2",
+  "status": "scaffold",
+  "clinical_execution_available": false,
+  "independent_ui": false,
+  "capabilities_ref": "contracts/capabilities.json",
+  "contract_ref": "docs/agent-contract.md",
+  "skill_ref": "skills/med-autopractice/SKILL.md",
+  "plugin_ref": ".codex-plugin/plugin.json",
+  "runtime_ref": "src/med_autopractice/runtime.py",
+  "knowledge_ref": "src/med_autopractice/knowledge.py",
+  "integration": {
+    "codex_primary_skill": "native_plugin",
+    "codex_plugin": "native_plugin",
+    "device_backend": "glkvm-native",
+    "device_integration": "kvm_client_source",
+    "opl_registration": "owner_manifest_available"
+  },
+  "local_inspection_command": "python3 scripts/project_status.py",
+  "runtime_command": "python3 scripts/map_runtime.py",
+  "package_ref": "opl-package.json"
+}

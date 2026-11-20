@@ -1,0 +1,24 @@
+name: Feature request
+description: Propose a generic reference capability or documentation improvement.
+title: "feature: "
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and intended outcome
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and scope
+      description: Explain the general use case and affected contracts without site-specific details.
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Public-data check
+      options:
+        - label: I used only synthetic or public data and did not include hospital, patient, credential, or deployment details.
+          required: true
