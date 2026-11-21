@@ -4,7 +4,7 @@
   "display_name": "Med Auto Practice",
   "description": "医生主导的临床工作智能体，支持病历结构化、医嘱协作和医院系统适配。",
   "publisher": "gaofeng21cn",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "source": "first_party",
   "source_repo": "https://github.com/gaofeng21cn/med-autopractice.git",
   "visibility": "public",
@@ -188,7 +188,7 @@
       "examples/synthetic/configure_site.py",
       "docs/hospital-adapters.md"
     ],
-    "digest": "sha256:464b80b1fcaa2e1fb5998b86491602b5fc6500beecebcf3ac933f81432a3dc80"
+    "digest": "sha256:02d6f82c6f5bbe449994040dcfb585241354b00fdbd05e83a44a3dd0e633eb5e"
   },
   "management_scope": "local_product"
 }
