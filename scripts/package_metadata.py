@@ -40,6 +40,9 @@ def verify_package(root: Path = ROOT) -> dict:
     entry = marketplace["plugins"]
     if marketplace["name"] != package["package_id"] or len(entry) != 1 or entry[0]["name"] != plugin["name"] or entry[0]["source"] != {"source": "local", "path": "."}:
         raise ValueError("Native marketplace does not select this package root")
+    for field in ("access_policy_ref", "credential_provider"):
+        if field in package and not (isinstance(package[field], str) and package[field].strip()):
+            raise ValueError(f"Package {field} must be a nonempty string when declared")
     lock = package["content_lock"]
     if lock["algorithm"] != "sha256" or lock["canonicalization"] != "ordered_path_length_file_length_bytes" or lock["digest"] != content_digest(root, lock["paths"]):
         raise ValueError("Package content lock does not match the installed files")

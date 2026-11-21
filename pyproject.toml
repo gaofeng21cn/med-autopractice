@@ -1,6 +1,6 @@
 [project]
 name = "med-autopractice"
-version = "0.1.0"
+version = "0.1.1"
 description = "Clinician-directed workflows for medical records, orders and discharge review"
 readme = "README.md"
 license = { file = "LICENSE" }
