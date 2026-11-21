@@ -1,58 +1,31 @@
-<p align="center"><img src="assets/branding/medautopractice-logo.png" width="112" alt="Med Auto Practice logo"></p>
-<p align="center"><a href="README.md">中文</a> · <strong>English</strong></p>
+<p align="center">
+  <img src="assets/branding/medautopractice-logo.png" alt="Med Auto Practice logo" width="132" />
+</p>
 
-# Med Auto Practice (MAP)
+<p align="center"><strong>English</strong> | <a href="./README.md">中文</a></p>
 
-MAP is an open-source clinical workflow agent for clinicians. It organizes outpatient and inpatient records into structured, source-linked facts, prepares notes and order changes for review, and tracks what the hospital system actually recorded. Clinicians work in Codex. Integration teams connect MAP to the systems their hospital already uses.
+<h1 align="center">Med Auto Practice</h1>
 
-## Run a case
+Med Auto Practice (MAP) is an open-source agent for clinicians. It brings chart entries, lab results and nursing notes together for one encounter, helps draft progress notes with traceable sources, and brings proposed order changes back to you for review.
 
-With Git and Python 3.10 or later, run the synthetic order demonstration. It uses the Python standard library.
+Start with records you already have, or ask MAP to help connect your hospital system. It checks which sources are available for the task and helps you verify the missing step. The next time you need the same information, MAP can reuse the connection your site has verified.
 
-```sh
-git clone https://github.com/gaofeng21cn/med-autopractice.git
-cd med-autopractice
-python3 scripts/map_demo.py
-```
+<p align="center">
+  <img src="assets/branding/medautopractice-overview.png" alt="The MAP workflow from a clinician's request through record collection, drafting and review to entry in the hospital system and verification of the result" width="100%" />
+</p>
 
-Follow one order change through simulated clinician approval, an independent read of the saved object and final acceptance. The output includes the reopened object's `readback.object_ref` and the sequence of `statuses` ending in `accepted`.
+## Start with a clinical task
 
-## Install the agent
+> “Turn these records into a timeline. Show where each diagnosis, medication and lab result came from, and flag anything that conflicts.”
 
-Search for **Med Auto Practice** in the OPL Software Center or install the same package from the CLI.
+> “I want to use our hospital's lab results in inpatient progress notes. We have an integration platform. Help me retrieve one result from the test system and check the encounter, unit and reporting time.”
 
-```sh
-opl packages install med-autopractice --json
-```
+> “Pick up the orders I was reviewing. Show me the proposed changes and the evidence for each one.”
 
-For direct installation in Codex, run the following commands.
+For records you supply, MAP presents structured findings and questions first, with the original text available for review. For hospital data, it looks first for an authorized native interface or integration middleware. It can also use a browser or desktop through Computer Use, or IP KVM for an isolated workstation. In the order workflow, the clinician reviews the exact proposal and checks the result read back from the hospital system after submission.
 
-```sh
-codex plugin marketplace add https://github.com/gaofeng21cn/med-autopractice.git --ref main
-codex plugin add med-autopractice@med-autopractice
-```
+## Use and develop MAP
 
-Start a fresh session and ask “Use MAP to run the synthetic order case. Show me the approved version and the result read back from the system.” The walkthrough covers individual approvals and resuming a task. [Getting started](docs/getting-started.md)
+Install **Med Auto Practice** from the OPL Software Center or add the plugin directly to Codex. Start a conversation with the task you want to complete. The public package includes a synthetic case, a sample deployment profile and a working FHIR lab reader. Each hospital enables clinical workflows according to its own authorization and validation. [Getting started](docs/getting-started.md) · [Hospital integration examples](docs/hospital-adapters.md)
 
-## Connect a hospital environment
-
-Start with one operation, such as reading a known lab result for an inpatient note. Prefer an authorized native API or the hospital's integration middleware for structured access. Use direct Computer Use for an available browser or desktop session. IP KVM is an option for a hardware-isolated terminal. A workflow can combine different transports.
-
-| Task | Entry point |
-| --- | --- |
-| Read a result over a native protocol | Run `python3 examples/synthetic/fhir_read.py`. The local FHIR R4 server returns a quantitative observation with a patient, encounter and resource version. [Hospital adapters](docs/hospital-adapters.md) |
-| Plan a pilot | Generate an external profile from the synthetic deployment example, choose a transport per operation and inspect outstanding dependencies and review points. [Deployment walkthrough](docs/site-integration.md#运行合成部署示例) |
-| Structure collected records | Export a record and nine fixed-column research tables. The clinician sees structured facts first, then questions and the collected source text. [Fixture and commands](tests/fixtures/README.md) |
-| Integrate a model, middleware or desktop host | Implement `ClinicalKnowledge` or `ClinicalSystem` and reuse task identity, approval and readback. [Developer guide](docs/adapter-development.md) |
-
-## Clinical workflows
-
-Phase one covers retrospective records, outpatient and inpatient order sets, admission orders, order adjustments, discharge medication, notes, discharge review and deadlines. Inpatient progress notes and order adjustments are the first site pilot workflows. Disease-specific cohorts and longitudinal follow-up come later. [Product scope](docs/product.md) · [Workflows](docs/workflows.md)
-
-The agent binds facts and source timestamps to a patient and encounter. A clinician approves the specific order proposal. After submission, the adapter independently reopens the target object and checks its contents and state. The clinician can accept or request changes on the same task. An uncertain submission is reconciled against the source system. [Agent contract](docs/agent-contract.md)
-
-## Status and development
-
-The public package includes the Codex skill, resumable synthetic tasks, structured record exports, a FHIR quantity reader and site adapter interfaces. Clinical workflows require site-specific authorization and qualification. Hospitals keep configuration, patient material and evidence in their own controlled storage. Run `python3 scripts/project_status.py --json` to inspect the installed version and capability status. Detailed engineering guides are maintained in Chinese. [Capabilities](contracts/capabilities.json) · [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md)
-
-Source and documentation are available under Apache-2.0. Contributions can include workflows, adapters and tests reproducible with synthetic data. [Contributing](CONTRIBUTING.md) · [Public scope](docs/public-scope.md) · [Security](SECURITY.md) · [License](LICENSE)
+Developers can connect hospital middleware, a desktop host or a clinical proposal service while reusing MAP's patient and encounter checks, clinician review and independent readback. The engineering guides are in Chinese. [Adapter development](docs/adapter-development.md) · [Architecture](docs/architecture.md) · [Product scope](docs/product.md) · [Contributing](CONTRIBUTING.md) · [Apache-2.0 license](LICENSE)

@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "med-autopractice",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Clinician-directed agent for medical records, order review and hospital system integration.",
   "author": {
     "name": "Gao Feng",
@@ -18,8 +18,8 @@
     "com.openai": {
       "interface": {
         "displayName": "Med Auto Practice",
-        "shortDescription": "整理病历、准备医嘱并复核系统结果",
-        "longDescription": "在 Codex 中整理结构化病历、审阅医嘱草案、核对来源和执行结果。部署团队可以用合成示例适配医院系统。",
+        "shortDescription": "整理病历、审阅医嘱，按当前工作接入本院系统",
+        "longDescription": "在 Codex 中整理已有病历、继续审阅一批医嘱，或让 MAP 为当前任务检查本院连接，验证一项取数操作。",
         "developerName": "Gao Feng",
         "category": "Productivity",
         "capabilities": [
@@ -29,7 +29,7 @@
         "composerIcon": "./assets/branding/medautopractice-logo.png",
         "logo": "./assets/branding/medautopractice-logo.png",
         "defaultPrompt": [
-          "查看 MAP 能力状态并运行合成医嘱演示。"
+          "使用 MAP 开始今天的临床工作。"
         ]
       }
     }

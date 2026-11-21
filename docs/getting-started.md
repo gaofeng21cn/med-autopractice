@@ -1,15 +1,6 @@
 # 快速上手
 
-MAP 的本地演示只需要 Python 3.10+。在 macOS、Linux 或 WSL 的终端执行以下命令，即可检查版本并走完一次合成医嘱任务。演示使用 Python 标准库和临时目录。
-
-```sh
-git clone https://github.com/gaofeng21cn/med-autopractice.git
-cd med-autopractice
-python3 scripts/project_status.py --json
-python3 scripts/map_demo.py
-```
-
-`map_demo.py` 调用合成 CLI，依次生成拟变更、提交模拟医生对确切提案和事实版本的批准、回读模拟系统对象，再记录模拟医生验收。输出中的 `mode` 为 `synthetic`，状态依次为 `needs_pre_submit_review`、`needs_clinician_acceptance`、`accepted`。命令退出时清理临时任务库。
+在 OPL 软件中心安装 **Med Auto Practice**，或运行 `opl packages install med-autopractice --json`。安装后打开新对话即可使用 MAP 主 Skill 和医院系统适配 Skill。
 
 ## 在 Codex 中加载 MAP
 
@@ -21,9 +12,22 @@ codex plugin add med-autopractice@med-autopractice
 codex plugin list --marketplace med-autopractice --json
 ```
 
-在新会话里输入「使用 Med Auto Practice 查看能力状态，并运行合成医嘱演示。报告待复核状态、系统回读和最终状态。」Codex 对话使用宿主自身的账号。合成 CLI 可以直接运行。
+在新会话里可以说「我想从本院测试系统取一项检验结果，帮我看已有的接入条件」。MAP 会检查当前部署，复用已选的连接，并请你补充这项操作实际缺少的信息。手头已有采集包时，直接告诉 MAP 文件位置和你要整理的内容。
 
 开发自己的 fork 时，从已审阅的 checkout 根目录用 `codex plugin marketplace add .` 登记源码。已配置同名 marketplace 时，先用 `codex plugin marketplace list` 确认当前来源再切换。Git 来源可以用 `--ref` 指定已审阅的提交。
+
+## 运行合成病例
+
+想看一次完整演练，可以说「用 MAP 演示医嘱调整，给我看批准的版本和系统回读」。也可在 macOS、Linux 或 WSL 使用 Git 和 Python 3.10+ 运行同一示例。
+
+```sh
+git clone https://github.com/gaofeng21cn/med-autopractice.git
+cd med-autopractice
+python3 scripts/project_status.py --json
+python3 scripts/map_demo.py
+```
+
+`map_demo.py` 用临时任务库生成拟变更，记录模拟医生对提案和事实版本的批准，再从模拟系统读回对象供验收。输出中的 `mode` 为 `synthetic`，状态依次为 `needs_pre_submit_review`、`needs_clinician_acceptance`、`accepted`。退出时清理临时任务库。
 
 ## 分步体验与恢复
 

@@ -35,7 +35,9 @@ python3 scripts/site_plan.py --profile \
   "$HOME/.config/med-auto-practice/sites/<deployment-id>/site-profile.json" revise_orders
 ```
 
-当前实现的 `site_plan.py` 只读取与 [通用依赖合同](../contracts/site-dependencies.json) 同 schema 的 JSON，供只读计划命令展示各步骤的 `unmapped`、`observed`、`qualified` 状态及证据引用。部署方应将该模板复制到仓库外，修改 `profile_id`、实际系统信息和本地依赖状态，再用环境变量或参数指定它。加载器拒绝从 MAP 源码目录内部读取 profile。默认不设置路径时，计划只读取没有站点信息且状态全部为 `unmapped` 的通用模板。
+MAP 启动时用 `python3 scripts/site_plan.py --inspect` 确认当前选择。参数 `--profile` 优先于 `MAP_SITE_PROFILE`，两者都未指定时只读通用模板。指定的档案失效时，检查会报告错误。加上 `--dependency read_lab_results` 只看这一项操作的通道、状态和证据引用，加上 `write_inpatient_notes` 则查看写病程所需的各项依赖。
+
+新部署可在院方指定的 Git 仓库外私有目录中运行 `python3 scripts/site_plan.py --init-profile <新文件路径>`。命令从[通用依赖合同](../contracts/site-dependencies.json)创建一份全为 `unmapped` 的档案，以私有权限写入新文件，已有文件会得到提示。部署方可以为这份档案填写自己的 `profile_id`，随后按实际操作保存系统信息和证据引用。宿主通过 `MAP_SITE_PROFILE` 选择本部署，后续任务沿用同一档案。
 
 详细的页面路径、语义操作、读取字段、恢复方式和证据保留信息目前应放在同一仓库外部署目录中的独立私有资料；`site_plan.py` 尚不读取这些 UI 说明。后续适配器必须增加经过版本化的操作 profile schema 和验证后，才可用机器读取这些内容。`observed` 仅代表观察到界面；`qualified` 需要明确资格证据，但仍不等于 `contracts/capabilities.json` 中的能力已开放。
 

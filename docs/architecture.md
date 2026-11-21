@@ -4,7 +4,7 @@
 
 ## 一个临床工作智能体，多种系统接入方式
 
-Med Auto Practice 在同一个项目内维护医学提案、业务工作流、临床任务和系统适配。宿主通过 Codex 主 Skill 调用。部署按单项操作选择原生协议、院内中间件、Computer Use 或 IP KVM。[医院适配指南](hospital-adapters.md)
+Med Auto Practice 在同一个项目内维护医学提案、业务工作流、临床任务和系统适配。宿主通过 Codex 主 Skill 调用。主 Skill 直接处理已有资料或恢复原任务。首次启动和需要院内数据时，它调用随包的医院适配 Skill，读取本次部署，按当前工作验证缺少的操作，再带着结果继续原任务。部署按单项操作选择原生协议、院内中间件、Computer Use 或 IP KVM。[主 Skill](../skills/med-autopractice/SKILL.md) · [医院适配 Skill](../skills/map-site-adaptation/SKILL.md) · [医院接入示例](hospital-adapters.md)
 
 不同通道共用患者、就诊、文档、医嘱和任务状态。正式记录归医院系统。连接授权、会话与控制权归相应的 API 提供者、桌面宿主或设备服务。
 
@@ -39,7 +39,7 @@ OPL Framework 从标签对应的提交生成安装包清单，将公开 OCI 制�
 
 `visibility=public` 表示软件公开分发。各院保管自己的连接和凭证，并按具体工作流记录验收结果。
 
-插件包含主 Skill、Python 代码、脚本、通用合同与相关文档。主 Skill 从自身插件根定位它们；显式 `MAP_SOURCE_ROOT` 可用于开发源码。院内 profile、患者资料和任务库位于包外，卸载插件只移除软件载体，原生管理器不负责删除这些业务资料。管理界面应分别显示软件状态与 `clinical_execution_available=false`，安装成功不能开放临床写入。
+插件包含 MAP 主 Skill、医院适配 Skill、Python 代码、脚本、通用合同与相关文档。两个 Skill 都从自身插件根定位资源。显式 `MAP_SOURCE_ROOT` 可用于开发源码。院内 profile、患者资料和任务库位于包外，卸载插件只移除软件载体，原生管理器不负责删除这些业务资料。管理界面分别显示软件状态与临床能力状态。
 
 代码或合同发生变化后，维护者审阅 `content_lock.paths` 并执行 `python3 scripts/package_metadata.py --write-lock` 更新内容摘要，再运行项目检查及相关测试。消费方以 Package ID、版本、精确源内容和 native readback 判断同一安装对象。
 
@@ -73,7 +73,7 @@ MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_
 
 ### 稳定任务契约与可替换实现
 
-其他 Agent 通过 MAP Codex 主 Skill 发起任务。主 Skill 把医生意图和获准作用范围交给 MAP，返回任务状态、待审提案、来源和系统证据引用；Codex 展示并传递医生的复核决定。`runtime.py` 是主 Skill 调用的本地边界，内部仍是 `agent/task_engine.py` 的开发内核；它当前只组合合成医学提案、合成系统与合成任务存储，主 Skill 用于规划与合成开发。
+其他 Agent 通过 MAP Codex 主 Skill 发起任务。主 Skill 把医生意图和获准作用范围交给 MAP，返回任务状态、待审提案、来源和系统证据引用；Codex 展示并传递医生的复核决定。`runtime.py` 是主 Skill 调用的本地边界，内部仍是 `agent/task_engine.py` 的开发内核；公开运行时组合合成医学提案、合成系统与合成任务存储。主 Skill 另可整理已提供的采集包，并调用医院适配 Skill 核对实际部署需要的操作。
 
 医学知识、制度规则与系统操作分开维护。医学知识组件可以结合专业知识库和患者事实生成提案，但不能自己点击系统或批准诊疗决定；院内制度包决定文书要求、模板和时限；业务工作流执行收集、核对、提交、回读、复核和修订。更换知识源或医学模型不改工作流与系统适配器；更换 HIS 或 IPKVM 不改临床任务的完成定义。
 

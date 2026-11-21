@@ -42,12 +42,15 @@ class SitePlan:
 
 class SiteCatalog:
     def __init__(self, document: dict):
-        if document.get("schema_version") != "map-site-dependencies.v1":
+        if not isinstance(document, dict) or document.get("schema_version") != "map-site-dependencies.v1":
             raise ValueError("unsupported site dependency catalog")
+        self.profile_id = document.get("profile_id")
         systems = document.get("systems")
         entries = document.get("dependencies")
         if not isinstance(systems, list) or not isinstance(entries, list):
             raise ValueError("site systems and dependencies must be lists")
+        if not all(isinstance(item, dict) for item in (*systems, *entries)):
+            raise ValueError("site systems and dependencies must be objects")
         system_ids = [item.get("id") for item in systems]
         if any(not isinstance(value, str) or not value for value in system_ids) or len(system_ids) != len(set(system_ids)):
             raise ValueError("site system IDs must be unique")

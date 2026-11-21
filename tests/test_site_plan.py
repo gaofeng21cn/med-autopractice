@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from med_autopractice.workflows.catalog import PHASE1_WORKFLOWS, PILOT_WORKFLOWS
 from med_autopractice.workflows.site_plan import SiteCatalog
-from scripts.site_plan import DEFAULT_PROFILE, resolve_profile_path
+from scripts.site_plan import DEFAULT_PROFILE, initialize_profile, resolve_profile_path
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,6 +76,23 @@ class SiteProfilePathTests(unittest.TestCase):
     def test_private_profiles_inside_repository_are_rejected(self):
         with self.assertRaisesRegex(ValueError, "outside the source repository"):
             resolve_profile_path(ROOT / "site-local" / "profile.json")
+
+    def test_initialization_preserves_existing_site_and_rejects_git_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            target = folder / "site-profile.json"
+            initialize_profile(target)
+            self.assertEqual(target.read_bytes(), DEFAULT_PROFILE.read_bytes())
+            if os.name == "posix":
+                self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+            target.write_text("existing private configuration")
+            with self.assertRaises(FileExistsError):
+                initialize_profile(target)
+            self.assertEqual(target.read_text(), "existing private configuration")
+            (folder / ".git").touch()  # A linked worktree has a .git file.
+            with self.assertRaisesRegex(ValueError, "outside Git"):
+                initialize_profile(folder / "another.json")
+            self.assertEqual({p.name for p in folder.iterdir()}, {".git", target.name})
 
     def test_external_profile_drives_read_only_plan_state(self):
         with tempfile.TemporaryDirectory() as directory:

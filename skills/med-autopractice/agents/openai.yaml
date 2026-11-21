@@ -1,4 +1,4 @@
 interface:
   display_name: "Med Auto Practice"
-  short_description: "整理结构化病历、审阅医嘱并规划医院系统接入"
-  default_prompt: "使用 Med Auto Practice 查看能力状态并运行合成医嘱演示。"
+  short_description: "帮助医生整理已有病历、接入本院资料并审阅同一次就诊的病程和医嘱"
+  default_prompt: "使用 $med-autopractice 开始今天的临床工作，先看看我手头的资料和本院已有的接入方式。"

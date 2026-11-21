@@ -1,30 +1,33 @@
 ---
 name: med-autopractice
-description: 使用 Med Auto Practice（MAP）处理医生主导的既往病历、医嘱、门诊和住院病历及出院质控任务；具体部署能力以仓库外配置及逐项资格验证为准。
+description: 使用 Med Auto Practice（MAP）开始或恢复医生主导的临床工作，包括整理已有病历、准备病程、审阅医嘱、出院质控，以及按当前任务接入本院系统。用户只说“启动 MAP”时也从这里开始。
 ---
 
 # Med Auto Practice
 
-这是 MAP 的 Codex 主 Skill，也是将来其他 Codex Agent 调用 MAP 的入口。Skill 负责识别医生任务、选择能力和组织复核；任务状态、字段校验、审计和医院系统操作由 MAP 代码及获准适配器承担。MAP 可独立安装和调用，并遵循 OPL Agent Apps 的共用基座原则：通用知识走 Framework 来源接口，设备连接和凭证走原设备 owner，其他外部连接按实际 capability 复用 Connect。实际与待接入边界见 [Agent 共用基座](../../docs/architecture.md#agent-共用基座)。
+围绕医生此刻要完成的工作组织资料、提案、审阅和系统回读。以用户显式指定的 `MAP_SOURCE_ROOT` 或本 Skill 目录上两级的插件根为内容根。单独安装 Skill 的宿主使用用户选定的 MAP checkout。切换内容根时用 `python3 scripts/project_status.py --json` 核对包 ID、版本和内容完整性。以下命令从该根执行，读取用户文件时使用其原始路径。
 
-先定位 MAP 内容根。用户已显式指定 `MAP_SOURCE_ROOT` 时使用该目录，否则使用本 Skill 上两级的插件根。独立 Skill 可使用用户提供并确认的源码 checkout，包括自有 fork。核对根目录的 `opl-package.json`（`package_id=med-autopractice`）、`contracts/capabilities.json` 与 `scripts/project_status.py`，用 `python3 scripts/project_status.py --json` 回读身份、版本、内容完整性和能力状态。公开能力目录中的真实临床能力为 `planned`、`callable=false`。
+## 开始或继续任务
 
-用户要求入门、试跑或验证安装时，从内容根执行 `python3 scripts/map_demo.py`。该命令使用固定合成请求，自动走完模拟审批、回读和验收。向用户报告 `mode`、状态序列及回读对象。需要分步体验、部署演练或自定义提案时，参阅[快速上手](../../docs/getting-started.md)。
+按用户已经给出的目标选择入口，能做的步骤由你执行。
 
-接入后的任务顺序为：锁定患者和本次就诊，按业务工作流要求读取带来源与时间的事实，调用独立医学知识组件形成带生成者版本的提案，执行获准的系统操作，独立回读院内对象，取得版本化资源证据或一手截图，交医生接受或提出修订。医学模型可按能力分别配置，但不接收医院界面写入权限；工作流不得擅自改写医学提案。医嘱、组套发布等临床关键变更在提交前核对医生对确切提案的批准；提交后仍需医生最终验收。不得编造临床事件或把点击成功当作系统结果。
+- **已有任务、草稿或待审医嘱。** 先从原任务存储读回任务和当前版本，呈现待审差异、依据与下一步。公开合成任务用原 `--store`、`--task-id` 调用 `scripts/map_runtime.py show`。真实任务使用站点登记的任务入口。结果不确定时先查找原提交并独立回读。仅在缺失原任务位置或对象有歧义时请医生定位。
+- **已有采集包或病历资料。** 直接在获准工作区整理，按下文“整理已有资料”交付。只有医生要求补取院内来源时才接入对应系统。
+- **需要本院系统，或医生只说“启动 MAP”。** 立即使用随包的[医院适配 Skill](../map-site-adaptation/SKILL.md)，把本轮目标、已知部署位置、可用连接和已有成果带过去。即使用户只说“我想用检验结果写今天的病程”，也主动检查这个任务需要的接入。未给目标时先读已选配置，再用一个具体问题确定第一项工作。
+- **明确要求演示或检查安装。** 检查安装用 `python3 scripts/project_status.py --json` 回读身份、版本、内容完整性和能力。明确要看合成医嘱时运行 `python3 scripts/map_demo.py`，说明模拟审批与回读结果。分步体验见[快速上手](../../docs/getting-started.md)。
 
-用户询问如何适配本院时，先选一项业务操作和目标系统，优先核对原生接口或院内中间件；需要界面时选择直接 Computer Use，隔离终端可选 IP KVM。运行 `examples/synthetic/configure_site.py` 生成外部合成 profile，再用 `scripts/site_plan.py` 查看每个依赖的通道和资格状态。检验原生取数可运行 `python3 examples/synthetic/fhir_read.py`。站点连接与凭据由部署提供者持有。[医院接入与验证](../../docs/hospital-adapters.md)
+## 整理已有资料
 
-首批院内贯通当前住院患者的病程记录和根据结果、护理记录调整医嘱。医嘱批次在录入前需医生确认确切提案，录入后仍需系统回读与医生验收。纯 KVM 中文长文尚未通过资格测试，病历可生成带来源草稿，但不得声称已自动回填。`python3 scripts/kvm_status.py` 只读检查本机共享服务，不连接设备或医院系统。
+对采集包使用 `scripts/structure_record.py`，保留每项事实的时间、来源和原文。阅读版依次给出结构化病历、问题清单、病历原文。需要跨病例汇总时再导出固定列研究长表及归一化编码。缺项留空，冲突并列，诊断仅按原文归并。复核注记保存在获准的工作目录，`--review-notes` 可将对应条目标为“※需核实”。[病历结构化](../../docs/clinical-record.md) · [研究数据集](../../docs/research-dataset.md)
 
-规划或开发时，从已核对的源码仓库按需读取 `docs/architecture.md`、`docs/workflows.md`、`docs/agent-contract.md` 和 `docs/roadmap.md`，不要一次性加载全部资料。
+## 在同一任务中复核
 
-任务状态和推进由 `src/med_autopractice/runtime.py` 与 `scripts/map_runtime.py` 承担，返回 `status`、`next_action`、`missing_information`、`proposal`、`snapshot` 与 `execution.readback`。该入口当前只组合合成系统与合成存储，只接受 `demo-`／`synthetic-` 身份；不得改造成默认指向院内 profile 的通道。真实院内执行仍须先完成对应系统的适配与逐项资格。
+按工作流绑定患者与就诊，记录事实来源、时间和覆盖范围。医学组件基于这份快照产生带版本的候选提案。医生对确切版本批准医嘱或组套变更。通过获准的部署入口提交后，重新读取目标系统的对象、状态与内容，附版本化资源证据或一手截图，交医生接受或修订。临床判断和签署由有资质的医生完成。[任务与恢复契约](../../docs/agent-contract.md)
 
-可复用 Markdown 知识由 OPL Framework 统一管理。需要列出来源、检索或读取获授权正文时，使用 `scripts/map_knowledge.py --workspace <workspace> [--project <project>] sources|search|read-source`；需要维护已有正文时使用同一入口的 `register`、`propose`、`review`、`apply` 或 `review-source`，把精确的 reviewer、review ref、时间和摘要交给 Framework。MAP 不读取或复制患者资料、院内 profile/playbook 到个人知识库；这些仍由医院系统和部署 owner 管理。知识引用须在启动或修订提案时显式放入 `Proposal.knowledge_refs`，旧引用在未换版本前会保留。重新使用依据前，以 `verify-dependencies --dependencies <JSON 文件>` 核对知识 ID 与 SHA-256；响应的 `knowledge_dependencies.valid` 必须为 `true`，进程退出码为 0 本身不表示依赖有效。
+公开的 `scripts/map_runtime.py` 配合合成系统与合成存储，只接受 `demo-` 或 `synthetic-` 身份。站点工作流的开放状态见[能力目录](../../contracts/capabilities.json)，部署配置和操作资格见[医院适配 Skill](../map-site-adaptation/SKILL.md)。
 
-需要盘点业务界面时，先确认站点获准的浏览器、桌面或设备会话，按[院内系统调研与操作档案](../../docs/site-survey.md)记录对象定位、观察和恢复步骤。Computer Use 优先使用可访问性或局部观察，选择 IP KVM 时复用 `glkvm-native` 的 OCR、等待和人工接管。一手画面保存在获准的证据目录。分别验证只读、草稿保存、医嘱写入和独立回读。
+## 按需使用知识和开发资料
 
-高度特定的现场操作步骤（例如门户登录、角色与科室选择）存放在仓库外的私有 playbook 中，用 `scripts/site_playbook.py` 读取与展开；格式见 `contracts/site-playbook.schema.json`，说明见 [院内系统调研与操作档案](../../docs/site-survey.md#私有-playbook把高度特定的操作固化下来)。playbook 只描述“在这套界面里怎么走”，不承载医学判断，也不得写入密码、令牌或患者内容；含 `reviewed_write` 步骤的 playbook 必须先取得对应用户授权再执行。
+需要通用 Markdown 来源时使用 `scripts/map_knowledge.py --workspace <workspace> [--project <project>] sources|search|read-source`。维护知识走同一入口的 `register`、`propose`、`review`、`apply` 或 `review-source`。在启动或修订提案时显式记录 `Proposal.knowledge_refs`，复用前以 `verify-dependencies --dependencies <JSON 文件>` 核对 `knowledge_dependencies.valid`。患者记录和站点资料由其原有受控存储保管。[知识来源与部署](../../docs/site-integration.md)
 
-整理既往病历并需要跨病例统一管理时，按 [病历收集与结构化](../../docs/clinical-record.md) 与 [研究数据集](../../docs/research-dataset.md) 执行：`scripts/structure_record.py` 先把采集包清洗成结构化病历（不补造、不覆盖、逐节可回溯），再抽成固定列的研究长表并补上与原文并列的归一化编码；缺失一律留空，诊断只按文字归并，需要人工确认的条目写入仓库外的私有注记，由 `--review-notes` 就地标成 `※需核实 N`。阅读版顺序固定为结构化病历、问题清单、病历原文。归一化结果不是诊断结论，正式出具或发表前仍须按院方政策完成核对与审批。
+开发工作流、中间件或宿主适配时按需读取[架构](../../docs/architecture.md)、[业务工作流](../../docs/workflows.md)与[适配器开发指南](../../docs/adapter-development.md)。

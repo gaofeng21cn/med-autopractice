@@ -1,0 +1,4 @@
+interface:
+  display_name: "MAP 医院系统适配"
+  short_description: "为当前临床任务复用本院系统连接，验证具体操作并记录下次可用的接入方式"
+  default_prompt: "使用 $map-site-adaptation 帮我从本院测试系统取回一项检验结果。"
