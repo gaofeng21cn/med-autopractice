@@ -3,8 +3,8 @@
 MAP 的本地演示只需要 Python 3.10+。在 macOS、Linux 或 WSL 的终端执行以下命令，即可检查版本并走完一次合成医嘱任务。演示使用 Python 标准库和临时目录。
 
 ```sh
-git clone https://github.com/gaofeng21cn/med-autopractice-reference.git
-cd med-autopractice-reference
+git clone https://github.com/gaofeng21cn/med-autopractice.git
+cd med-autopractice
 python3 scripts/project_status.py --json
 python3 scripts/map_demo.py
 ```
@@ -16,7 +16,7 @@ python3 scripts/map_demo.py
 使用支持 `codex plugin marketplace add` 和 `codex plugin add` 的 Codex CLI。以下命令以 Codex CLI 0.170.0 验证。
 
 ```sh
-codex plugin marketplace add https://github.com/gaofeng21cn/med-autopractice-reference.git --ref main
+codex plugin marketplace add https://github.com/gaofeng21cn/med-autopractice.git --ref main
 codex plugin add med-autopractice@med-autopractice
 codex plugin list --marketplace med-autopractice --json
 ```

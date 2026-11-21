@@ -1,16 +1,16 @@
 # 架构与领域模型
 
-状态：模块边界与状态归属的 SSOT。医学提案路由、一期工作流依赖计划和合成任务内核已实现；临床执行未实现。能力是否开放只看 [能力目录](../contracts/capabilities.json)。
+本文定义模块边界与数据归属。MAP 公开发行任务内核、医学提案路由、部署计划和系统适配组件。各项医院工作流的开放状态见[能力目录](../contracts/capabilities.json)。
 
-## 两个仓库，MAP 内部两类业务模块，共享一套患者事实与任务状态
+## 一个临床工作智能体，多种系统接入方式
 
-保留 `glkvm-native` 作为通用设备控制项目，新增 `med-autopractice` 临床工作 Agent。业务层、系统适配层放在同一个模块化 Agent 项目中；不按 HIS/PACS、门诊/住院、病历/医嘱/队列分别拆仓库，也不为每个任务建立独立 Agent。
+Med Auto Practice 在同一个项目内维护医学提案、业务工作流、临床任务和系统适配。宿主通过 Codex 主 Skill 调用。部署按单项操作选择原生协议、院内中间件、Computer Use 或 IP KVM。[医院适配指南](hospital-adapters.md)
 
-原因：设备控制可以独立验证和演进；系统适配与临床工作共享患者、就诊、文档、医嘱和执行状态，过早拆分会重复存储患者资料、重复读取画面，并造成版本及授权不一致。目标为单一任务编排 owner 和任务状态存储；设备写入权由 glkvm-native 共享服务管理。
+不同通道共用患者、就诊、文档、医嘱和任务状态。正式记录归医院系统。连接授权、会话与控制权归相应的 API 提供者、桌面宿主或设备服务。
 
 | 层 | 所属项目 | 负责什么 | 不负责什么 |
 |---|---|---|---|
-| 设备操作 | 现有 glkvm-native | 连接、帧、局部 OCR、输入、等待、画面变化校验、预览与交还 | 患者识别、医嘱意义、诊疗决策 |
+| 接入通道 | 医院原生接口、集成平台、Computer Use 宿主、可选 glkvm-native | 提供获准的查询、操作、输入与一手结果 | 诊疗判断和医生审批 |
 | 系统适配 | med-autopractice / adapters | 把“打开这次就诊的检验结果”变成可验证的 HIS/EMR/LIS/PACS 操作 | 决定患者应该接受什么诊疗 |
 | 医学判断 | med-autopractice / medicine | 使用有来源的患者事实和版本化知识产生候选内容与依据；可按能力选用不同模型 | 操作医院系统、批准提案、决定任务完成 |
 | 业务工作流 | med-autopractice / workflows、agent、domain | 定义资料范围和复核门槛，按任务收集事实、提交获准操作、回读、留痕和组织验收 | 自行决定药物、剂量或虚构临床事实 |
@@ -25,7 +25,7 @@ MAP 可独立安装和由 Codex 调用，同时遵循 [OPL Agent Apps 标准](ht
 | --- | --- | --- |
 | 安装与调用 | `opl-package.json`、Codex 原生插件/Skill；`scripts/project_status.py`、`scripts/map_runtime.py` | 以稳定 ID `med-autopractice` 管理软件；Framework 投影原生安装与更新状态，不另建安装 registry。临床能力资格继续由 MAP 能力目录决定 |
 | 可复用知识与通用上下文 | Framework `opl knowledge`；`knowledge.py` / `scripts/map_knowledge.py` 薄客户端 | 显式绑定工作区、项目、域和来源版本；医学提案通过现有 `ClinicalKnowledge` 接口消费获准内容与引用，详见下一节 |
-| 设备连接与凭证 | `glkvm-native` 的公开客户端和 profile | 复用设备连接、秘密保管、互斥和接管；MAP 只持受控引用与医院系统语义 |
+| 医院连接与凭证 | 部署获准的原生接口、中间件、Computer Use 宿主或设备后端 | 复用对应提供者的授权与会话，适配器绑定站点、患者、就诊和具体操作 |
 | 后续外部服务连接 | [Framework Connect 公开合同](https://github.com/gaofeng21cn/one-person-lab/blob/main/docs/specs/connection-authorization.md)；实际 provider 保管和续期凭证 | 当前没有外部服务 provider 的生产实现。出现实际需求时绑定已有 capability、连接引用及 grant；缺少入口时与 owner 补齐，不解析宿主凭据文件或新建秘密库 |
 | 任务与人机复核 | MAP `TaskRuntime`、提案摘要、系统回读与医生审阅；Codex 展示 | 保留同一临床任务 owner；当前无独立业务 UI。需要 UI 时先复用宿主/共享视图，携带同一 `task_id` 与提案摘要，回读同一任务结果 |
 
@@ -33,11 +33,11 @@ MAP 可独立安装和由 Codex 调用，同时遵循 [OPL Agent Apps 标准](ht
 
 ### 软件管理与临床资格
 
-`opl-package.json` 是可安装内容的身份、版本、展示文案与内容锁；`.agents/plugins/marketplace.json` 选择根目录的 Codex 原生插件。显示名称为 **Med Auto Practice**，稳定 Package ID 与插件 ID 均为 `med-autopractice`，二者在目录中分别展示。公开源码阶段使用 `development_only`，只提供源码和本地检查入口，不声明已有正式制品或临床成熟度。
+`opl-package.json` 持有软件包身份、版本、展示文案和内容锁。OPL 软件中心与 Codex 使用相同的 `med-autopractice` 安装 ID。公开 GitHub `main` 是开发主线，带注释的版本标签锁定发布源码。
 
-安装、启停、更新和卸载可以复用 Framework 与 Codex 原生插件管理器。公开仓库不声明 OCI 制品，也不携带 registry 凭据；部署方如需制品发行，应在自己的受控载体中配置公开或私有 Package 来源，并单独完成内容锁、权限和回读。`python3 scripts/project_status.py --json` 回读本包身份、内容完整性和业务资格。开发 checkout 是当前公开源码的主要入口。
+OPL Framework 从标签对应的提交生成安装包清单，将公开 OCI 制品发布到 `ghcr.io/gaofeng21cn/one-person-lab-packages/med-autopractice`。软件中心按版本及摘要获取，Codex 也可以直接从仓库安装。用 `python3 scripts/project_status.py --json` 查看当前安装的身份和内容完整性。
 
-源码仓库公开，Package metadata 使用 `visibility=public`、空的 `access_policy_ref` 和 `credential_provider`。任何部署制品的访问授权、签名和凭据由部署方的发行 owner 管理；源码可读性不自动授予临床系统访问权。软件目录、安装状态与临床执行资格仍分别判定；MAP 不保管 GitHub 凭据。
+`visibility=public` 表示软件公开分发。各院保管自己的连接和凭证，并按具体工作流记录验收结果。
 
 插件包含主 Skill、Python 代码、脚本、通用合同与相关文档。主 Skill 从自身插件根定位它们；显式 `MAP_SOURCE_ROOT` 可用于开发源码。院内 profile、患者资料和任务库位于包外，卸载插件只移除软件载体，原生管理器不负责删除这些业务资料。管理界面应分别显示软件状态与 `clinical_execution_available=false`，安装成功不能开放临床写入。
 
@@ -51,7 +51,7 @@ MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_
 
 `KnowledgeSources` 是通用来源客户端，`ClinicalKnowledge.propose(request, snapshot)` 是医学提案接口，两者职责不同。生产医学组件通过 `build_runtime` 的现有注入点组合来源与医学实现，不能把知识检索结果直接当作已通过医学审查的提案。当前公共客户端与合成任务可调用，生产医学组件及其来源选择尚未实现。通用个人上下文仅按任务需要读取；来源缺失、撤权、版本失效或 `knowledge_dependencies.valid=false` 时按公共接口的结果修复，不转为本地正文副本。参数与复核流程见[部署档案](site-integration.md#可复用知识的公共来源入口)。
 
-逻辑调用：医生 → Codex 中的 MAP 主 Skill → MAP 任务内核。任务内核分别调用医学知识/提案组件和院内系统适配器；首版适配器仅通过 `glkvm-native` 的共享服务与 IP KVM 操作院内 Windows。医学知识负责解释事实和形成有来源的候选内容，任务内核负责身份、版本、权限、顺序、留痕和结果状态，医院适配器负责院内系统的语义操作与一手回读。未来更换通道不改变这些领域责任；当前不建设医院 API/CLI 路线。
+医生在 Codex 中发起任务，MAP 内核调用医学知识组件产生候选提案，再由站点适配器执行获准操作。医学组件持有建议及依据，内核负责身份、版本、权限、审阅和恢复，适配器负责读取来源、提交和独立回读。
 
 ### 模块与合同归属
 
@@ -60,7 +60,7 @@ MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_
 | 患者事实、提案、任务和审阅对象 | `domain/task.py` | `Snapshot` 绑定患者、就诊、来源与采集范围；`Proposal` 绑定能力、事实引用、生成者、知识引用和 `map-proposal.v1` 版本。领域对象不决定诊疗内容或 UI 坐标。 |
 | 医学判断 | `medicine/ports.py`、`medicine/router.py` | `ClinicalKnowledge.propose(request, snapshot)` 返回候选 `Proposal`；按能力路由到不同实现。当前只有接口、路由和合成实现，没有临床模型、知识库或有效医学规则。 |
 | 业务工作流 | `workflows/catalog.py`、`workflows/site_plan.py`、`agent/task_engine.py`、`runtime.py` | 九项一期任务已有依赖顺序与阻断检查；首批两项有合成数据任务内核验证。`runtime.py` 是宿主唯一入口，负责装配 policy、投影任务视图与转达复核决定；目前只接合成系统。其余任务的真实临床编排未实现。 |
-| 院内系统语义与设备调用 | `adapters/ports.py`、`adapters/kvm.py`、`contracts/site-dependencies.json`；外仓 `glkvm-native` | 公开仓库定义通用系统角色与依赖合同；每个部署的产品、厂家、版本、页面路径和资格证据由仓库外 profile 提供。当前没有具体部署的合格 `HospitalUI` 实现。设备连接和控制归属仍由外仓管理。 |
+| 系统语义与接入 | `adapters/ports.py`、`adapters/fhir.py`、`adapters/ui.py`、`adapters/kvm.py` | `ClinicalSystem` 规定查询、提交、回读及恢复。FHIR 组件读取单项定量结果，Computer Use 与 KVM 共用界面检查，具体部署维护自己的操作实现。 |
 | 患者事实清洗与结构化病历 | `records/clinical_record.py`、`contracts/structured-clinical-record.schema.json` | 把仓库外采集包清洗为带每节来源、显式缺口和显式冲突的结构化病历；规则通用、无院方与患者内容。规则见[病历收集与结构化](clinical-record.md)。它只整理已采集内容，不做临床判断，也不写回院内系统。 |
 
 工作流不调用医学模型内部方法，也不修改医学提案内容；医学组件不接收键鼠客户端或医院写入权限。一个医嘱任务中，医学组件提出候选变更及依据，业务工作流确认必需资料和医生对确切版本的批准，适配器负责院内录入与可见对象回读。`TaskEngine` 是跨能力的状态编排，不等于各项临床业务流程已经完成。
@@ -77,21 +77,21 @@ MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_
 
 医学知识、制度规则与系统操作分开维护。医学知识组件可以结合专业知识库和患者事实生成提案，但不能自己点击系统或批准诊疗决定；院内制度包决定文书要求、模板和时限；业务工作流执行收集、核对、提交、回读、复核和修订。更换知识源或医学模型不改工作流与系统适配器；更换 HIS 或 IPKVM 不改临床任务的完成定义。
 
-当前适配接口包括 `read_context`、`apply`、`read_back` 和以完整任务上下文进行的 `find_submission`。首版医院适配仅通过 KVM 观察与输入；只有现场验收过的界面操作才可声明为可写。设备控制由 glkvm-native 管理。跨患者/就诊绑定、提交前事实版本复核、重复写入防护、院内对象回读和医生最终验收不能降级。
+适配接口包括 `read_context`、`can_apply`、`apply`、`read_back` 和 `find_submission`。获准的原生接口或中间件优先使用系统对象与结构化字段。Computer Use 使用宿主的浏览器或桌面会话。IP KVM 由设备服务负责。各通道共用患者绑定、版本核对、提交审批、回读和医生验收。
 
-每个任务步骤记录动作、结果、时间和底层 trace 引用；界面点击与录入由适配器提供可追溯记录。提交后从院内列表重新打开目标对象，核对患者、就诊、状态和内容，取得一手系统截图交给医生。截图只是复核材料，不自动证明文字、医嘱或患者正确；医生接受后任务才闭环。医生提出问题时保留原提交与审阅记录，修订同一对象或按院内规则生成明确的新版本，重新回读和验收。不能用 MAP 自行排版的截图冒充系统截图。
+每步记录动作、结果、时间与 trace。提交后从目标系统独立读取患者、就诊、对象、状态与完整拟变更字段。界面路径提供一手截图，结构化路径提供带观察时间的源资源版本或私有快照引用，两者都随任务交给医生验收。
 
-留痕不等于每一步都把整屏图像送给模型。适配器在获准的私有存储面保留原始操作、目标对象和画面证据，MAP 审计引用其 trace；模型只按任务需要读取局部观察和关键帧，等待、重试判断及页面稳定性检查尽量在适配器本地完成。身份、医嘱关键字段和最终一手截图不能为节省 token 而略过。
+在界面路径上，原始画面放在院方获准的证据存储。模型按需读取局部观察与关键帧。等待和页面稳定性检查在适配器本地完成。原生协议路径可直接保留结构化来源。
 
 ## 两个仓库怎样组织
 
 设备控制继续由独立的 `glkvm-native` 项目负责。Med Auto Practice（MAP）维护临床任务语义、通用适配合同和合成验证，不把任何部署工作区路径写入源码。
 
-实际骨架目录及说明见 [README](../README.md)。入口为 Agent 调用，当前不创建独立业务 UI。
+项目入口与运行示例见 [README](../README.md)。Codex 提供对话与复核界面。
 
 不在版本库保存真实患者资料、账号、截图或令牌。医院专属界面配置和内部制度按院方要求私有管理；真实病例存储位置、保留期、备份及访问权限单独配置。开发用合成数据即可，真实病例存储采用院方认可的加密与访问控制方案，不能把个人目录或普通日志作为默认临床资料库。
 
-开始沿用 Python 与 glkvm-native 已安装的本地客户端；Codex 主 Skill 调用同一任务内核，设备层的 MCP 与 MAP 共用共享服务。不把整个产品写成超长 Skill：代码负责状态、字段、校验、等待与恢复；Skill 说明何时用什么能力、如何判断缺失和核对结果；版本化规则提供临床规范和模板依据。通用知识和连接按上述 owner 复用，采用当前实际需要的能力；独立部署不要求新增微服务、向量数据库或多 Agent 调度。
+Codex 主 Skill 调用 Python 任务内核。接口适配器复用授权连接，Computer Use 复用宿主会话，KVM 适配器复用外部设备服务。代码负责状态、字段、校验与恢复，Skill 负责理解工作目标并选择合适的操作。
 
 只有出现独立团队/发布周期、多套临床产品共享同一连接器，或院内部署必须隔离进程和存储时，再评估拆出第三个项目。专病队列目前作为业务模块，不因为未来可能科研而预先分仓。
 

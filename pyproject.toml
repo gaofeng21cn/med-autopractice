@@ -1,7 +1,7 @@
 [project]
 name = "med-autopractice"
-version = "0.0.3"
-description = "Med Auto Practice: clinical workflow Agent source scaffold"
+version = "0.1.0"
+description = "Clinician-directed workflows for medical records, orders and discharge review"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"

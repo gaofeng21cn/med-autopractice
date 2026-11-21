@@ -1,15 +1,15 @@
 # MAP 开发约定
 
-- 产品是 Med Auto Practice（MAP），插件 ID 为 `med-autopractice`。本仓库 `med-autopractice-reference` 提供公开规范、参考实现和合成验证。
+- Med Auto Practice（MAP）的公开开发与发布仓库名、软件包 ID 和 Codex 插件 ID 均为 `med-autopractice`。
 - 先看 README、当前任务对应文档及 contracts/capabilities.json。一期包含全部既往/当下功能，专病队列与动态随访后置；不能用一个演示替代完整范围。
 - glkvm-native 是外部设备控制 owner；不复制其凭据、连接、键鼠互斥或人工接管实现。医院适配通过已验收的公开入口使用它。
-- 当前有骨架、开发态 Codex 主 Skill/插件源码和合成数据任务内核；是否在某台宿主安装须当地回读，没有院内界面适配或临床验收。用户说的 ToAgent 指 Codex 调用 MAP 主 Skill，不要求另造线协议。MAP 可独立安装，仍遵循 OPL Agent Apps 共用基座原则：通用知识复用 Framework 公共来源接口，连接与凭证复用对应 provider 或 Connect，临床任务保留领域 owner。实际接入与尚待接入的边界以 docs/architecture.md 为准，不得伪造可调用能力或资格证据。
-- 首版计划通过 `glkvm-native` 经 IP KVM 适配 Windows 上的医院系统。首批范围是住院病程与医嘱调整，包含医嘱提交前医生批次确认，以及提交后的系统回读与医生验收。
+- Codex 主 Skill 是 ToAgent 入口。MAP 独立安装，按需使用 OPL 的通用知识与连接能力。可运行入口由代码和测试确定，临床能力由站点对具体工作流验收。
+- 原生协议、院内中间件、直接 Computer Use 和 IP KVM 通过同一临床系统接口接入。按操作选择通道。首批站点试点为住院病程与医嘱调整。
 - 医院系统拥有正式病历/医嘱事实；MAP 拥有任务、证据引用和草案。患者与就诊绑定、来源/时间、医生审阅版本、写入回读是共享领域边界。
-- 医学提案、业务工作流和医院系统适配分开维护。任务步骤与底层操作留痕；提交后的一手系统截图和医生最终验收是闭环条件。
+- 医学提案、工作流与系统适配分开维护。医嘱在提交前按确切版本取得医生批准。提交后核对目标对象的一手证据，界面通道提供截图，原生通道提供版本化资源回读，最后由医生验收。
 - `docs/architecture.md` 是模块与状态 owner 的 SSOT；`medicine/` 只形成有来源的候选提案，`workflows/` 只定义业务任务要求与复核门槛。具体可用性仅以 `contracts/capabilities.json` 为准；`contracts/site-dependencies.json` 只提供通用、未配置的依赖模板。真实部署的产品、厂家、版本、页面路径、账号角色和资格证据必须放在仓库外的本地 profile，通过 `MAP_SITE_PROFILE` 指向，不能提交到任何分支或历史。
 - 正式临床判断及签署由有资质且有权限的医生负责。不得编造临床事件，异常指标不自动触发诊疗变更；签名、组套发布和医嘱动作遵循当前授权和院内流程。
 - 不存真实患者、图像、账号、token、会话日志、医院名称、供应商清单、内部地址或私有院内系统资料于 Git。`.gitignore` 只是防误加的第二道措施；发现已提交的站点数据时必须清理当前文件和 Git 历史。公开仓库的测试、示例与复现只用合成数据；真实部署 profile 放在仓库外并按院方要求保护。
 - GitHub 仓库简介使用英文；产品主 README.md 使用中文，英文版本维护在 README.en.md；其他新文档使用中文，代码标识沿用英文。单一事实写在其 owner 文档/目录，通过链接引用，避免多份产品范围漂移。
-- 公开入口用 `python3 scripts/project_status.py --json` 和 `python3 scripts/map_demo.py` 验证。站点接入的验收条件见 `docs/kvm-ui-qualification.md`。
+- 用 `python3 scripts/project_status.py --json` 和 `python3 scripts/map_demo.py` 验证打包后的公开入口。接入选型与验证见 `docs/hospital-adapters.md`。
 - 提交、推送、注册、部署及真实患者操作按当前用户目标和各自授权推进；骨架阶段的状态说明不能冻结后续已授权开发。

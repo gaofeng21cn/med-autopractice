@@ -75,6 +75,7 @@ def _task_from_json(body: str) -> Task:
             readback["proposal_digest"], readback["state"],
             readback["screenshot_ref"], tuple(readback["trace_refs"]),
             readback.get("visible_payload"), readback.get("observed_at"),
+            readback.get("resource_version_ref"),
         )
     receipt = data.get("receipt")
     if receipt is not None:
@@ -87,6 +88,7 @@ def _task_from_json(body: str) -> Task:
             action=event["action"], outcome=event["outcome"],
             at_utc=event["at_utc"], evidence_refs=tuple(event["evidence_refs"]),
             screenshot_ref=event["screenshot_ref"],
+            resource_version_ref=event.get("resource_version_ref"),
         )
         for event in data["events"]
     ]

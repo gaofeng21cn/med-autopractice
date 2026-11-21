@@ -28,8 +28,6 @@ def inspect_project():
     if plugin['version'] != manifest['version']:
         raise ValueError('插件与 Agent 清单版本不一致')
     catalog = read_json(manifest['capabilities_ref'])
-    if catalog.get('current_backend') != 'ip_kvm_only':
-        raise ValueError('首版执行通道必须为 IP KVM')
     capabilities = catalog['capabilities']
     ids = [item['id'] for item in capabilities]
     if len(ids) != len(set(ids)):
@@ -48,7 +46,7 @@ def inspect_project():
         raise ValueError('能力目录不能提前声明临床验收')
     if not set(catalog.get('first_pilot', [])) <= set(ids):
         raise ValueError('首批任务不在能力目录中')
-    if manifest['status'] == 'scaffold' and (manifest['clinical_execution_available'] or callable_ids):
+    if not catalog['clinical_execution_qualified'] and (manifest['clinical_execution_available'] or callable_ids):
         raise ValueError('骨架状态不能声明临床执行已可用')
     return {
         'package': package,
@@ -57,6 +55,7 @@ def inspect_project():
         'independent_ui': manifest['independent_ui'], 'integration': manifest['integration'],
         'capabilities_by_phase': dict(Counter(item['phase'] for item in capabilities)),
         'current_backend': catalog['current_backend'],
+        'site_transports': catalog['site_transports'],
         'first_pilot': catalog['first_pilot'],
         'callable_capabilities': callable_ids,
         'validation_scope': 'Local metadata references and consistency only; not clinical qualification',

@@ -41,11 +41,11 @@ python3 scripts/site_plan.py --profile \
 
 ## 运行合成部署示例
 
-在源码根目录执行以下命令。通用依赖模板、合成调研档案和操作样例会复制到同一个仓库外目录，供只读工具检查。
+在源码根目录执行以下命令。示例根据通用模板在仓库外生成配置，为检验、医嘱、护理和影像分别选择四种通道。输出中的 `transport` 表示该操作的接入方式，`observed` 表示已有合成观察记录。起草自己的正式配置时，从 `contracts/site-dependencies.json` 的全空模板开始。[接入选型与 FHIR 示例](hospital-adapters.md)
 
 ```sh
 map_site_dir=$(mktemp -d)
-cp contracts/site-dependencies.json "$map_site_dir/site-profile.json"
+python3 examples/synthetic/configure_site.py "$map_site_dir/site-profile.json"
 cp examples/synthetic/survey.json "$map_site_dir/survey.json"
 cp -R examples/synthetic/playbooks "$map_site_dir/playbooks"
 

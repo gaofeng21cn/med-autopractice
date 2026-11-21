@@ -135,6 +135,24 @@ class TaskEngineTests(unittest.TestCase):
         self.assertEqual(events[-2]["action"], "system_readback")
         self.assertEqual(events[-2]["screenshot_ref"], task.readback.screenshot_ref)
 
+    def test_versioned_middleware_readback_survives_restart_and_clinician_review(self):
+        class NativeSystem(SyntheticSystem):
+            def read_back(self, receipt, task):
+                return replace(super().read_back(receipt, task),
+                               screenshot_ref=None, observed_at="2026-01-01T10:00:00Z",
+                               resource_version_ref=receipt.object_ref + "/versions/2")
+
+        system = NativeSystem("middleware")
+        store = SyntheticSqliteTaskStore(Path(self.directory.name) / "tasks.sqlite")
+        task = self.engine(system, store=store).start(self.request(), auto_submit=True)
+        self.assertEqual(task.status, "needs_clinician_acceptance")
+        reopened = self.engine(system, store=store)
+        reviewed = reopened.review(task.task_id, "demo-clinician", accepted=True)
+        evidence = "demo://record/1/versions/2"
+        self.assertEqual(reviewed.reviews[-1].resource_version_ref, evidence)
+        self.assertEqual(reopened.get(task.task_id).events[-2].resource_version_ref, evidence)
+        self.assertIsNone(reviewed.readback.screenshot_ref)
+
     def test_order_submission_requires_exact_clinician_review(self):
         with self.assertRaises(ValueError):
             TaskPolicy("prepare_admission_orders", False, "saved_draft")

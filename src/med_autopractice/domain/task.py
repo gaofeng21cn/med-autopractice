@@ -126,10 +126,12 @@ class SystemReadback:
     object_ref: str
     proposal_digest: str
     state: str
-    screenshot_ref: str
+    screenshot_ref: str | None
     trace_refs: tuple[str, ...]
     visible_payload: dict[str, Any] | None = None
     observed_at: str | None = None
+    # Versioned target-system evidence from an independent structured read.
+    resource_version_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -141,6 +143,7 @@ class AuditEvent:
     at_utc: str
     evidence_refs: tuple[str, ...] = ()
     screenshot_ref: str | None = None
+    resource_version_ref: str | None = None
 
 
 @dataclass(frozen=True)
@@ -148,9 +151,10 @@ class ReviewDecision:
     clinician_id: str
     accepted: bool
     proposal_digest: str
-    screenshot_ref: str
+    screenshot_ref: str | None
     feedback: str
     at_utc: str
+    resource_version_ref: str | None = None
 
 
 @dataclass

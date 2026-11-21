@@ -2,24 +2,24 @@
   "surface_kind": "opl_capability_package_manifest.v2",
   "package_id": "med-autopractice",
   "display_name": "Med Auto Practice",
-  "description": "医生主导的临床资料整理、病历草拟与医嘱协作；当前提供规划及合成任务验证。",
+  "description": "医生主导的临床工作智能体，支持病历结构化、医嘱协作和医院系统适配。",
   "publisher": "gaofeng21cn",
-  "version": "0.0.3",
-  "source": "public_source_repo",
-  "source_repo": "https://github.com/gaofeng21cn/med-autopractice-reference.git",
+  "version": "0.1.0",
+  "source": "first_party",
+  "source_repo": "https://github.com/gaofeng21cn/med-autopractice.git",
   "visibility": "public",
   "access_policy_ref": null,
   "credential_provider": null,
   "package_role": "capability_package",
-  "publication_channel_admission": "development_only",
+  "publication_channel_admission": "admitted",
   "presentation": {
     "display_name_i18n": {
       "zh-CN": "Med Auto Practice",
       "en-US": "Med Auto Practice"
     },
     "description_i18n": {
-      "zh-CN": "医生主导的临床资料整理、病历草拟与医嘱协作；当前提供规划及合成任务验证。",
-      "en-US": "Clinician-directed records, notes, and order collaboration, with planning and synthetic task validation."
+      "zh-CN": "医生主导的临床工作智能体，支持病历结构化、医嘱协作和医院系统适配。",
+      "en-US": "A clinician-directed agent for structured records, order review and hospital system integration."
     },
     "session_routing_summary_i18n": {
       "zh-CN": "通过 MAP 主 Skill 查看能力、规划任务并运行合成验证；临床执行按部署资格开放。",
@@ -84,8 +84,8 @@
       "kind": "codex_plugin_manager",
       "plugin_selector": "med-autopractice@med-autopractice",
       "executor_route": "codex_cli",
-      "marketplace_source": "gaofeng21cn/med-autopractice-reference",
-      "publication_ref": null
+      "marketplace_source": "gaofeng21cn/med-autopractice",
+      "publication_ref": "ghcr.io/gaofeng21cn/one-person-lab-packages/med-autopractice:latest-stable"
     }
   },
   "content_lock": {
@@ -170,9 +170,14 @@
       "examples/synthetic/survey.json",
       "scripts/map_demo.py",
       "tests/fixtures/README.md",
-      "tests/fixtures/synthetic-history-collection.json"
+      "tests/fixtures/synthetic-history-collection.json",
+      "src/med_autopractice/adapters/ui.py",
+      "src/med_autopractice/adapters/fhir.py",
+      "examples/synthetic/fhir_read.py",
+      "examples/synthetic/configure_site.py",
+      "docs/hospital-adapters.md"
     ],
-    "digest": "sha256:1556eb639769a4f3fd69141fa1cf2df64c8570dfc020fdc2df242d1e1444d292"
+    "digest": "sha256:b6f716ab1fe9c5e10acf9750360d6f87a81d93f0e40d5b819269bf287d53afdc"
   },
   "management_scope": "local_product"
 }

@@ -1,10 +1,10 @@
 {
-  "schema_version": "map-scaffold.v1",
+  "schema_version": "map-agent.v1",
   "agent_id": "med-autopractice",
   "display_name": "Med Auto Practice",
   "short_name": "MAP",
-  "version": "0.0.3",
-  "status": "scaffold",
+  "version": "0.1.0",
+  "status": "developer_preview",
   "clinical_execution_available": false,
   "independent_ui": false,
   "capabilities_ref": "contracts/capabilities.json",
@@ -16,9 +16,8 @@
   "integration": {
     "codex_primary_skill": "native_plugin",
     "codex_plugin": "native_plugin",
-    "device_backend": "glkvm-native",
-    "device_integration": "kvm_client_source",
-    "opl_registration": "owner_manifest_available"
+    "opl_registration": "owner_manifest_available",
+    "site_adapter_port": "ClinicalSystem"
   },
   "local_inspection_command": "python3 scripts/project_status.py",
   "runtime_command": "python3 scripts/map_runtime.py",

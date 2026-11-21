@@ -203,6 +203,7 @@ class TaskRuntime:
                     "state": task.readback.state,
                     "proposal_digest": task.readback.proposal_digest,
                     "screenshot_ref": task.readback.screenshot_ref,
+                    "resource_version_ref": task.readback.resource_version_ref,
                     "trace_refs": list(task.readback.trace_refs),
                     "observed_at": task.readback.observed_at,
                 },

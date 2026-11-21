@@ -20,6 +20,7 @@ class Dependency:
     state: str
     evidence_ref: str | None
     qualification_ref: str | None
+    transport: str | None = None
 
 
 @dataclass(frozen=True)
@@ -28,6 +29,7 @@ class PlanStep:
     dependency_id: str | None
     owner: str
     state: str
+    transport: str | None = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +51,8 @@ class SiteCatalog:
         system_ids = [item.get("id") for item in systems]
         if any(not isinstance(value, str) or not value for value in system_ids) or len(system_ids) != len(set(system_ids)):
             raise ValueError("site system IDs must be unique")
+        catalog = Path(__file__).resolve().parents[3] / "contracts/capabilities.json"
+        transports = json.loads(catalog.read_text(encoding="utf-8"))["site_transports"]
         self.dependencies = {}
         for item in entries:
             dependency_id = item.get("id")
@@ -63,9 +67,12 @@ class SiteCatalog:
                     or (state != "unmapped" and not item.get("evidence_ref"))
                     or (state == "qualified" and not item.get("qualification_ref"))):
                 raise ValueError("invalid or duplicate site dependency")
+            transport = item.get("transport")
+            if transport is not None and (owner != "adapter" or transport not in transports):
+                raise ValueError(f"invalid transport for {dependency_id}")
             self.dependencies[dependency_id] = Dependency(
                 dependency_id, owner, state, item.get("evidence_ref"),
-                item.get("qualification_ref"),
+                item.get("qualification_ref"), transport,
             )
         required = set()
         for workflow in PHASE1_WORKFLOWS.values():
@@ -90,7 +97,7 @@ class SiteCatalog:
 
         def add(phase: str, dependency_id: str):
             dependency = self.dependencies[dependency_id]
-            steps.append(PlanStep(phase, dependency_id, dependency.owner, dependency.state))
+            steps.append(PlanStep(phase, dependency_id, dependency.owner, dependency.state, dependency.transport))
             if dependency.state != "qualified":
                 blockers.append(dependency_id)
 

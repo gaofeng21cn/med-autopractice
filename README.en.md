@@ -1,107 +1,58 @@
-<p align="center">
-  <img src="assets/branding/medautopractice-logo.png" alt="Med Auto Practice logo" width="132" />
-</p>
+<p align="center"><img src="assets/branding/medautopractice-logo.png" width="112" alt="Med Auto Practice logo"></p>
+<p align="center"><a href="README.md">中文</a> · <strong>English</strong></p>
 
-<p align="center">
-  <a href="./README.md">中文</a> | <a href="./README.en.md"><strong>English</strong></a>
-</p>
+# Med Auto Practice (MAP)
 
-# Med Auto Practice
+MAP is an open-source clinical workflow agent for clinicians. It organizes outpatient and inpatient records into structured, source-linked facts, prepares notes and order changes for review, and tracks what the hospital system actually recorded. Clinicians work in Codex. Integration teams connect MAP to the systems their hospital already uses.
 
-**From clinical intent to verifiable clinical workflows.**
+## Run a case
 
-Med Auto Practice (MAP) is an agent for clinician-directed work across outpatient and inpatient care. Its planned scope connects patient records, draft orders and notes, clinician review, authorized system entry, and verification of the resulting state. The first planned execution path uses IP KVM with Windows. Its Codex primary Skill is the intended entrypoint. MAP can be installed and called independently while following the OPL Agent Apps shared-foundation principles: reusable knowledge uses Framework source APIs, and device connections and credentials remain with their existing provider. The [architecture](docs/architecture.md#agent-共用基座) defines the shared capabilities and clinical-data boundaries.
-
-> **In development:** This repository contains separate medical-proposal routing, generic dependency plans for all nine phase-one workflows, and a synthetic-data task engine. Deployments use replaceable IP KVM and hospital-system adapters. Site names, vendors, versions, UI paths, and qualification evidence are configured by each deployment outside this source repository. No clinical workflow is callable.
-
-## Quick start
-
-Run a synthetic order task with Python 3.10+. The demo exercises drafting, simulated clinician approval, system readback, and final acceptance.
+With Git and Python 3.10 or later, run the synthetic order demonstration. It uses the Python standard library.
 
 ```sh
-git clone https://github.com/gaofeng21cn/med-autopractice-reference.git
-cd med-autopractice-reference
+git clone https://github.com/gaofeng21cn/med-autopractice.git
+cd med-autopractice
 python3 scripts/map_demo.py
 ```
 
-To add the development plugin to Codex, use a CLI version that supports plugin marketplaces.
+Follow one order change through simulated clinician approval, an independent read of the saved object and final acceptance. The output includes the reopened object's `readback.object_ref` and the sequence of `statuses` ending in `accepted`.
+
+## Install the agent
+
+Search for **Med Auto Practice** in the OPL Software Center or install the same package from the CLI.
 
 ```sh
-codex plugin marketplace add https://github.com/gaofeng21cn/med-autopractice-reference.git --ref main
+opl packages install med-autopractice --json
+```
+
+For direct installation in Codex, run the following commands.
+
+```sh
+codex plugin marketplace add https://github.com/gaofeng21cn/med-autopractice.git --ref main
 codex plugin add med-autopractice@med-autopractice
-codex plugin list --marketplace med-autopractice --json
 ```
 
-In a new Codex session, ask “Use Med Auto Practice to check its capabilities and run the synthetic order demo.” The [setup and walkthrough](docs/getting-started.md), [deployment examples](docs/site-integration.md#运行合成部署示例), and [adapter development guide](docs/adapter-development.md) provide further detail in Chinese.
+Start a fresh session and ask “Use MAP to run the synthetic order case. Show me the approved version and the result read back from the system.” The walkthrough covers individual approvals and resuming a task. [Getting started](docs/getting-started.md)
 
-<p align="center">
-  <img src="assets/branding/medautopractice-overview.png" alt="Med Auto Practice phase-one plan: clinical tasks, patient records, draft notes and orders, clinician review, system entry, and result verification; supported by patient and encounter binding, source and time, and access and review controls." width="100%" />
-</p>
+## Connect a hospital environment
 
-## What MAP Is Designed To Do
+Start with one operation, such as reading a known lab result for an inpatient note. Prefer an authorized native API or the hospital's integration middleware for structured access. Use direct Computer Use for an available browser or desktop session. IP KVM is an option for a hardware-isolated terminal. A workflow can combine different transports.
 
-Clinical work involves judgment and a steady flow of record gathering, drafting, review, and follow-up. Relevant facts often sit across systems; a proposed change and its completed system state are easy to confuse. MAP is being designed to keep the patient's record, the clinician's intent, drafts, review decisions, and verified outcomes connected within one task.
-
-After integration, a clinician could ask MAP to:
-
-- Assemble a sourced timeline from prior outpatient and inpatient records, identifying missing or conflicting information.
-- Prepare a progress-note draft from documented events and today's completed round, highlighting facts that still need confirmation.
-- Draft admission orders against a clinician-confirmed plan and flag medication, dose, route, and investigation details for review.
-- Check a discharge record for omissions, review findings, signature state, and approaching deadlines.
-
-Tasks are intended to continue from verified facts and recorded progress. A change in patient, encounter, or fact version requires another check before work proceeds.
-
-## Planned Capabilities
-
-| Area | Phase-one scope |
+| Task | Entry point |
 | --- | --- |
-| Patient history | Gather and structure outpatient and inpatient records, with source, time, completeness, and conflicts preserved. |
-| Order sets and patient orders | Prepare and review outpatient and inpatient order sets, admission orders, changes informed by results and nursing records, and discharge medication drafts. |
-| Clinical documentation | Draft inpatient and structured outpatient notes from actual clinical events, following current institutional rules without inventing missing facts. |
-| Discharge review | Identify incomplete or conflicting records, review and signature status, proposed corrections, and time-sensitive follow-up. |
+| Read a result over a native protocol | Run `python3 examples/synthetic/fhir_read.py`. The local FHIR R4 server returns a quantitative observation with a patient, encounter and resource version. [Hospital adapters](docs/hospital-adapters.md) |
+| Plan a pilot | Generate an external profile from the synthetic deployment example, choose a transport per operation and inspect outstanding dependencies and review points. [Deployment walkthrough](docs/site-integration.md#运行合成部署示例) |
+| Structure collected records | Export a record and nine fixed-column research tables. The clinician sees structured facts first, then questions and the collected source text. [Fixture and commands](tests/fixtures/README.md) |
+| Integrate a model, middleware or desktop host | Implement `ClinicalKnowledge` or `ClinicalSystem` and reuse task identity, approval and readback. [Developer guide](docs/adapter-development.md) |
 
-Disease-specific cohorts, data organization for research, and longitudinal follow-up are planned for a later phase. Phase one is intended to cover the full scope above; a single demonstration would not establish that the clinical workflow is complete.
+## Clinical workflows
 
-## Clinical Responsibility
+Phase one covers retrospective records, outpatient and inpatient order sets, admission orders, order adjustments, discharge medication, notes, discharge review and deadlines. Inpatient progress notes and order adjustments are the first site pilot workflows. Disease-specific cohorts and longitudinal follow-up come later. [Product scope](docs/product.md) · [Workflows](docs/workflows.md)
 
-MAP would organize evidence, drafts, proposed changes, and task outcomes. Clinicians retain clinical judgment, approval of treatment plans, and formal signatures. The hospital system remains authoritative for the actual medical record, orders, and execution state. An order entered is not proof that treatment occurred, and a clicked save button is not proof that a document was saved; completion requires a readback from the target system.
+The agent binds facts and source timestamps to a patient and encounter. A clinician approves the specific order proposal. After submission, the adapter independently reopens the target object and checks its contents and state. The clinician can accept or request changes on the same task. An uncertain submission is reconciled against the source system. [Agent contract](docs/agent-contract.md)
 
-Real deployment requires institution-approved access and patient-data handling. No hospital clinical validation has been completed. Planned PACS navigation does not imply automated image interpretation from remote-control screens.
+## Status and development
 
-## The Med Auto Family
+The public package includes the Codex skill, resumable synthetic tasks, structured record exports, a FHIR quantity reader and site adapter interfaces. Clinical workflows require site-specific authorization and qualification. Hospitals keep configuration, patient material and evidence in their own controlled storage. Run `python3 scripts/project_status.py --json` to inspect the installed version and capability status. Detailed engineering guides are maintained in Chinese. [Capabilities](contracts/capabilities.json) · [Architecture](docs/architecture.md) · [Roadmap](docs/roadmap.md)
 
-| Agent | Focus |
-| --- | --- |
-| **Med Auto Science · MAS** | Medical research, analysis, evidence, and manuscripts. |
-| **Med Auto Grant · MAG** | Medical grant planning, writing, review, and application materials. |
-| **Med Auto Cast · MAC** | Medical education video planning, production, review, and delivery. |
-| **Med Auto Practice · MAP** | Clinical records, order collaboration, documentation, and discharge quality checks. |
-
-MAP owns clinical task meaning and workflow state. The separate `glkvm-native` project owns authorized device connections, observation, keyboard and pointer control, waits, and human takeover. MAP does not duplicate that device layer.
-
-Within MAP, `medicine/` produces evidence-linked candidate proposals and can select a different provider or model per capability. `workflows/` defines required source coverage and clinician review gates; the task engine manages authorization, execution, readback, and acceptance. Neither a model proposal nor a visible vendor-client screen establishes a completed hospital action. The [architecture document](docs/architecture.md) is the source of truth for module and state ownership.
-
-## Current Status
-
-Version **`0.0.3`** remains a development scaffold. The medical-proposal router and local task engine exercise audit, visible-content readback, and clinician acceptance with synthetic inpatient note and order cases. The thin direct-consumer adapter uses OPL Framework knowledge source APIs and preserves exact `knowledge_refs` when a proposal is revised. This repository provides generic contracts, synthetic validation, and a reference implementation. A synthetic-only SQLite store verifies restart recovery and uncertain-submission handling; it is not approved for patient data. The capability catalog marks every clinical capability as `planned` and `callable=false`. Deployment-specific adapters, target-system readback, and clinical acceptance remain outside this source repository and require separate qualification.
-
-## Software identity and public source
-
-The catalog uses **Med Auto Practice** as the display name and `med-autopractice` as its stable Package and plugin ID, at version **0.0.3**. This repository provides public source, generic contracts, synthetic data, and read-only inspection commands. `opl-package.json` retains the software identity and content lock in `development_only` source mode. The local verification commands run from a source checkout. Deployment teams may reuse the source in a controlled carrier, while site profiles, patient data, and evidence remain outside this repository. See [public scope and deployment boundary](docs/public-scope.md) and [software management and clinical qualification](docs/architecture.md#软件管理与临床资格).
-
-`python3 scripts/project_status.py --json` works from the source tree or a materialized plugin root and reports package integrity and clinical qualification separately. Software inspection does not change `planned`, `callable=false` clinical capabilities. Removing the plugin preserves external deployment profiles, patient records, and task stores.
-
-From the checkout, inspect the project, run the example proposer, or check the generic site plan.
-
-```sh
-python3 scripts/project_status.py --json
-python3 examples/synthetic/custom_proposer.py
-python3 scripts/site_plan.py revise_orders
-PYTHONPATH=src python3 -m unittest discover -s tests -v
-```
-
-The site-plan command reads a generic contract or an explicitly selected local profile; tests use synthetic records. For the detailed plan, see [product scope](docs/product.md), [architecture](docs/architecture.md), [workflows](docs/workflows.md), [deployment profiles](docs/site-integration.md), [agent interface](docs/agent-contract.md), [implementation roadmap](docs/roadmap.md), [research evidence](docs/research.md), and the [capability catalog](contracts/capabilities.json). These technical references are currently maintained in Chinese.
-
-## License
-
-The source and documentation are licensed under Apache License 2.0. See [NOTICE](NOTICE) for branding and provenance, [CONTRIBUTING](CONTRIBUTING.md) to contribute, and [SECURITY](SECURITY.md) for private reports.
+Source and documentation are available under Apache-2.0. Contributions can include workflows, adapters and tests reproducible with synthetic data. [Contributing](CONTRIBUTING.md) · [Public scope](docs/public-scope.md) · [Security](SECURITY.md) · [License](LICENSE)

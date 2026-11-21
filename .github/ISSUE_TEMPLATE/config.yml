@@ -1,5 +1,5 @@
 blank_issues_enabled: true
 contact_links:
   - name: Security and privacy reports
-    url: https://github.com/gaofeng21cn/med-autopractice-reference/security/policy
+    url: https://github.com/gaofeng21cn/med-autopractice/security/policy
     about: Do not disclose patient, hospital, credential, or deployment details in public issues.

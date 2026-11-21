@@ -1,13 +1,13 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "med-autopractice",
-  "version": "0.0.3",
-  "description": "Codex clinical workflow agent for clinician-directed records, orders, notes, and discharge review. Source scaffold only.",
+  "version": "0.1.0",
+  "description": "Clinician-directed agent for medical records, order review and hospital system integration.",
   "author": {
     "name": "Gao Feng",
     "url": "https://github.com/gaofeng21cn"
   },
-  "repository": "https://github.com/gaofeng21cn/med-autopractice-reference",
+  "repository": "https://github.com/gaofeng21cn/med-autopractice",
   "keywords": [
     "clinical-workflow",
     "codex",
@@ -18,14 +18,14 @@
     "com.openai": {
       "interface": {
         "displayName": "Med Auto Practice",
-        "shortDescription": "临床任务 Agent，当前为开发骨架。",
-        "longDescription": "面向医生的病历资料、医嘱协作、病历记录与出院质控任务；当前未接入医院系统，不执行真实临床操作。",
+        "shortDescription": "整理病历、准备医嘱并复核系统结果",
+        "longDescription": "在 Codex 中整理结构化病历、审阅医嘱草案、核对来源和执行结果。部署团队可以用合成示例适配医院系统。",
         "developerName": "Gao Feng",
         "category": "Productivity",
         "capabilities": [
           "Interactive"
         ],
-        "websiteURL": "https://github.com/gaofeng21cn/med-autopractice-reference",
+        "websiteURL": "https://github.com/gaofeng21cn/med-autopractice",
         "composerIcon": "./assets/branding/medautopractice-logo.png",
         "logo": "./assets/branding/medautopractice-logo.png",
         "defaultPrompt": [

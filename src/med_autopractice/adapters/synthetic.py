@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from med_autopractice.adapters.kvm import KVMClinicalSystem, UIProfile, VisibleObject
+from med_autopractice.adapters.ui import UIClinicalSystem, UIProfile, VisibleObject
 from med_autopractice.adapters.ports import ClinicalSystem
 from med_autopractice.domain.task import (
     ExecutionReceipt, Fact, Proposal, Snapshot, SourceCoverage, SubjectRef, Task,
@@ -170,4 +170,4 @@ def build_synthetic_system(
     scenario: SyntheticScenario | None = None,
 ) -> tuple[ClinicalSystem, SyntheticHospitalUI]:
     ui = SyntheticHospitalUI(scenario)
-    return KVMClinicalSystem(ui), ui
+    return UIClinicalSystem(ui), ui

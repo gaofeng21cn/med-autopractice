@@ -63,12 +63,13 @@ class TaskEngine:
     def _event(
         self, task: Task, action: str, outcome: str,
         refs: tuple[str, ...] = (), screenshot_ref: str | None = None,
+        resource_version_ref: str | None = None,
     ) -> None:
         event = AuditEvent(
             task_id=task.task_id, sequence=len(task.events) + 1,
             action=action, outcome=outcome,
             at_utc=datetime.now(timezone.utc).isoformat(),
-            evidence_refs=refs, screenshot_ref=screenshot_ref,
+            evidence_refs=refs, screenshot_ref=screenshot_ref, resource_version_ref=resource_version_ref,
         )
         self.audit.append(event)
         task.events.append(event)
@@ -201,7 +202,8 @@ class TaskEngine:
             valid = self._readback_matches(task, receipt, readback, policy)
             next_status = "needs_clinician_acceptance" if valid else "execution_uncertain"
             task.status = next_status
-            self._event(task, "system_readback", next_status, readback.trace_refs, readback.screenshot_ref)
+            self._event(task, "system_readback", next_status, readback.trace_refs,
+                        readback.screenshot_ref, readback.resource_version_ref)
         except Exception:
             task.status = "execution_uncertain"
             self._event(task, "system_execution", "uncertain")
@@ -217,7 +219,7 @@ class TaskEngine:
             and readback.proposal_digest == task.proposal.digest
             and readback.visible_payload == task.proposal.payload
             and readback.state == policy.expected_system_state
-            and bool(readback.screenshot_ref)
+            and bool(readback.screenshot_ref or (readback.resource_version_ref and readback.observed_at))
             and bool(readback.trace_refs)
         )
 
@@ -250,7 +252,8 @@ class TaskEngine:
             if self._readback_matches(task, receipt, readback, policy)
             else "execution_uncertain"
         )
-        self._event(task, "reconcile_readback", task.status, readback.trace_refs, readback.screenshot_ref)
+        self._event(task, "reconcile_readback", task.status, readback.trace_refs,
+                    readback.screenshot_ref, readback.resource_version_ref)
         return task
 
     def review(self, task_id: str, clinician_id: str, *, accepted: bool, feedback: str = "") -> Task:
@@ -276,6 +279,7 @@ class TaskEngine:
             clinician_id=clinician_id, accepted=accepted,
             proposal_digest=task.prepared_digest,
             screenshot_ref=task.readback.screenshot_ref,
+            resource_version_ref=task.readback.resource_version_ref,
             feedback=feedback, at_utc=datetime.now(timezone.utc).isoformat(),
         ))
         refs = (clinician_id,) if accepted else (clinician_id, sha256(feedback.encode()).hexdigest())
