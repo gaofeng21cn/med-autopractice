@@ -188,7 +188,7 @@
       "examples/synthetic/configure_site.py",
       "docs/hospital-adapters.md"
     ],
-    "digest": "sha256:04b68f61661cf065a14499d94a213c87f964848459151e7105b5fc762a4c3563"
+    "digest": "sha256:063e000ee85ffa7b505912a1b613dedcb56107e61565a94b48c0f02239e9d5f3"
   },
   "management_scope": "local_product"
 }

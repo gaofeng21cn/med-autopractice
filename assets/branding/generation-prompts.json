@@ -20,7 +20,26 @@
   "assets": [
     {
       "file": "medautopractice-logo.png",
-      "prompt": "Use case: logo-brand.\nCreate ONE new square logo image for Med Auto Practice (MAP), a clinical workflow Agent in the same product family as the two reference logos.\nInput images are STYLE REFERENCES ONLY: reference 1 Med Auto Science logo; reference 2 Med Auto Grant logo. Keep their recognizable family visual language: white rounded square app tile, subtle very pale blue dot paper texture, soft restrained shadow, bold dark navy/near-black rounded outlines, segmented circular outer ring in navy, teal and bright blue with a small gold ring junction.\nReplace the central symbol with a DISTINCTIVE simple clinical clipboard plus a compact teal stethoscope curved around its lower right corner, with a small gold check mark medallion indicating clinician review. The clipboard has just two short abstract lines. Prioritize one coherent, balanced icon readable at 132px. The central clipboard and stethoscope must be clearly distinguishable from both paper-sheet reference icons. Flat hand-inked, lightly colored-pencil texture matching references, polished spacing. No text, no letters, no watermark, no extra graphic panels. White opaque background, generous safe margins, 1024x1024."
+      "prompt": "Use case: logo-brand. Edit image 1 (current Med Auto Practice logo). Images 2 and 3 (Med Auto Science and Med Auto Grant) are style and exact family-proportion references. Output one square app tile, 1024x1024 visually. Preserve the same opaque off-white paper rounded tile, restrained soft bevel and shadow, very pale blue dot grid, and the same external circular trajectory seen in images 2 and 3: deep blue upper-left arc, teal upper-right arc, sky-blue lower arc, centered top and lower-left gaps, ONE amber ring junction just right of middle with deep-blue center. Match family ring width, light, margin, line weight and subtle colored-pencil grain. Replace only the busy central symbol in image 1 with one compact upright clinical clipboard in dark ink, two modest short chart lines and one clearly legible teal check mark integrated on the face of the clipboard. The clipboard has a small blue top clip, clearly distinct from the folded-corner generic science and grant papers. Leave enough negative space between clipboard and ring. No stethoscope, no separate round badge, no additional symbol, no text or letters. The board is the only central silhouette. Well-centered with visual weight like the siblings, recognizable at 32 px, polished and sober.",
+      "updated_on": "2026-11-23",
+      "method": "Built-in ImageGen edit with family references",
+      "input_images": [
+        {
+          "role": "edit target",
+          "file": "medautopractice-logo.png",
+          "revision": "28b3e79af0d51c65ebaa40fb2ab1a2731887e4ba"
+        },
+        {
+          "role": "style and proportion reference",
+          "project": "Med Auto Science",
+          "file": "medautoscience-logo.png"
+        },
+        {
+          "role": "style and proportion reference",
+          "project": "Med Auto Grant",
+          "file": "medautogrant-logo.png"
+        }
+      ]
     },
     {
       "file": "medautopractice-overview.png",
