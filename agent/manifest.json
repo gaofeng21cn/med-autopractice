@@ -3,7 +3,7 @@
   "agent_id": "med-autopractice",
   "display_name": "Med Auto Practice",
   "short_name": "MAP",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "status": "developer_preview",
   "clinical_execution_available": false,
   "independent_ui": false,
