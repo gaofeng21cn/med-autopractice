@@ -1,10 +1,18 @@
 {
   "schema_version": "map-capability-plan.v1",
   "owner": "Med Auto Practice",
-  "purpose": "Development plan, not an executable action catalog",
+  "purpose": "Capability scope and implementation status. Clinical callable requires deployment acceptance.",
   "current_backend": "synthetic",
-  "site_transports": ["native_api", "middleware", "computer_use", "ip_kvm"],
-  "first_pilot": ["write_inpatient_notes", "revise_orders"],
+  "site_transports": [
+    "native_api",
+    "middleware",
+    "computer_use",
+    "ip_kvm"
+  ],
+  "first_pilot": [
+    "write_inpatient_notes",
+    "revise_orders"
+  ],
   "clinical_execution_qualified": false,
   "capabilities": [
     {
@@ -16,9 +24,9 @@
         "inpatient"
       ],
       "planned_effect": "read",
-      "status": "planned",
+      "status": "local_implementation",
       "callable": false,
-      "implementation_ref": null
+      "implementation_ref": "src/med_autopractice/deployment.py"
     },
     {
       "id": "maintain_order_sets",
@@ -29,9 +37,9 @@
         "inpatient"
       ],
       "planned_effect": "reviewed_write",
-      "status": "planned",
+      "status": "local_implementation",
       "callable": false,
-      "implementation_ref": null
+      "implementation_ref": "src/med_autopractice/deployment.py"
     },
     {
       "id": "prepare_admission_orders",
@@ -41,9 +49,9 @@
         "inpatient"
       ],
       "planned_effect": "reviewed_write",
-      "status": "planned",
+      "status": "local_implementation",
       "callable": false,
-      "implementation_ref": null
+      "implementation_ref": "src/med_autopractice/deployment.py"
     },
     {
       "id": "revise_orders",
@@ -54,9 +62,9 @@
         "inpatient"
       ],
       "planned_effect": "reviewed_write",
-      "status": "planned",
+      "status": "local_implementation",
       "callable": false,
-      "implementation_ref": null
+      "implementation_ref": "src/med_autopractice/deployment.py"
     },
     {
       "id": "prepare_discharge_medication",
@@ -66,9 +74,9 @@
         "inpatient"
       ],
       "planned_effect": "reviewed_write",
-      "status": "planned",
+      "status": "local_implementation",
       "callable": false,
-      "implementation_ref": null
+      "implementation_ref": "src/med_autopractice/deployment.py"
     },
     {
       "id": "write_inpatient_notes",
@@ -78,9 +86,9 @@
         "inpatient"
       ],
       "planned_effect": "reviewed_write",
-      "status": "planned",
+      "status": "local_implementation",
       "callable": false,
-      "implementation_ref": null
+      "implementation_ref": "src/med_autopractice/deployment.py"
     },
     {
       "id": "write_outpatient_notes",
@@ -90,9 +98,9 @@
         "outpatient"
       ],
       "planned_effect": "reviewed_write",
-      "status": "planned",
+      "status": "local_implementation",
       "callable": false,
-      "implementation_ref": null
+      "implementation_ref": "src/med_autopractice/deployment.py"
     },
     {
       "id": "audit_discharge_records",
@@ -102,9 +110,9 @@
         "inpatient"
       ],
       "planned_effect": "reviewed_write",
-      "status": "planned",
+      "status": "local_implementation",
       "callable": false,
-      "implementation_ref": null
+      "implementation_ref": "src/med_autopractice/deployment.py"
     },
     {
       "id": "track_document_deadlines",
@@ -115,9 +123,9 @@
         "inpatient"
       ],
       "planned_effect": "read",
-      "status": "planned",
+      "status": "local_implementation",
       "callable": false,
-      "implementation_ref": null
+      "implementation_ref": "src/med_autopractice/deployment.py"
     },
     {
       "id": "build_disease_cohort",
@@ -128,9 +136,9 @@
         "inpatient"
       ],
       "planned_effect": "deferred",
-      "status": "planned",
+      "status": "local_implementation",
       "callable": false,
-      "implementation_ref": null
+      "implementation_ref": "src/med_autopractice/deployment.py"
     },
     {
       "id": "manage_followup",
@@ -141,9 +149,9 @@
         "inpatient"
       ],
       "planned_effect": "deferred",
-      "status": "planned",
+      "status": "local_implementation",
       "callable": false,
-      "implementation_ref": null
+      "implementation_ref": "src/med_autopractice/deployment.py"
     }
   ]
 }

@@ -1,4 +1,4 @@
-"""Task state storage. The SQLite implementation is for synthetic cases only."""
+"""SQLite task snapshots and their audit events commit in one transaction."""
 
 from __future__ import annotations
 
@@ -57,7 +57,9 @@ def _task_from_json(body: str) -> Task:
             _subject(snapshot["subject"]), snapshot["revision"],
             tuple(Fact(**fact) for fact in snapshot["facts"]),
             tuple(snapshot["trace_refs"]),
-            tuple(SourceCoverage(**coverage) for coverage in snapshot.get("coverage", [])),
+            tuple(SourceCoverage(
+                coverage["source_system"], coverage["scope"], coverage["complete"], tuple(coverage.get("gaps", ())),
+            ) for coverage in snapshot.get("coverage", [])),
         )
     proposal = data.get("proposal")
     if proposal is not None:
@@ -106,14 +108,14 @@ def _task_from_json(body: str) -> Task:
     )
 
 
-class SyntheticSqliteTaskStore:
-    """Crash-recovery test store; never use for patient information."""
-
-    def __init__(self, path: Path):
+class SqliteTaskStore:
+    def __init__(self, path: Path, *, site_id: str | None = None):
+        self.site_id = site_id
         self.path = path
         fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
         try:
-            if stat.S_IMODE(os.fstat(fd).st_mode) & 0o077:
+            identity = os.fstat(fd)
+            if not stat.S_ISREG(identity.st_mode) or identity.st_uid != os.getuid() or stat.S_IMODE(identity.st_mode) & 0o077:
                 raise PermissionError("task database must be private to its owner")
         finally:
             os.close(fd)
@@ -124,7 +126,20 @@ class SyntheticSqliteTaskStore:
                 "task_id TEXT PRIMARY KEY, request_id TEXT UNIQUE NOT NULL, "
                 "revision INTEGER NOT NULL, body TEXT NOT NULL)"
             )
-            connection.commit()
+            with connection:
+                connection.execute(
+                    "CREATE TABLE IF NOT EXISTS deployment (id INTEGER PRIMARY KEY CHECK (id = 1), "
+                    "site_id TEXT NOT NULL)"
+                )
+                connection.execute("BEGIN IMMEDIATE")
+                site = connection.execute("SELECT site_id FROM deployment WHERE id = 1").fetchone()
+                expected = site_id or ""
+                if site is None:
+                    if site_id and connection.execute("SELECT 1 FROM tasks LIMIT 1").fetchone():
+                        raise PermissionError("existing unbound task database")
+                    connection.execute("INSERT INTO deployment VALUES (1, ?)", (expected,))
+                elif site[0] != expected:
+                    raise PermissionError("task database belongs to another deployment")
         finally:
             connection.close()
 
@@ -136,7 +151,11 @@ class SyntheticSqliteTaskStore:
         connection = sqlite3.connect(self.path)
         try:
             row = connection.execute(query, (value,)).fetchone()
-            return _task_from_json(row[0]) if row else None
+            if row is None:
+                return None
+            task = _task_from_json(row[0])
+            self.validate_request(task.request)
+            return task
         finally:
             connection.close()
 
@@ -148,6 +167,10 @@ class SyntheticSqliteTaskStore:
 
     def validate_request(self, request: TaskRequest) -> None:
         subject = request.subject
+        if self.site_id:
+            if subject.site_id != self.site_id:
+                raise PermissionError("task belongs to another deployment")
+            return
         if (
             not subject.site_id.startswith("demo-")
             or not subject.patient_id.startswith("synthetic-")
@@ -165,11 +188,13 @@ class SyntheticSqliteTaskStore:
         try:
             with connection:
                 if task.revision == 0:
-                    connection.execute(
-                        "INSERT INTO tasks (task_id, request_id, revision, body) "
-                        "VALUES (?, ?, ?, ?)",
-                        (task.task_id, task.request.request_id, next_revision, body),
-                    )
+                    try:
+                        connection.execute(
+                            "INSERT INTO tasks (task_id, request_id, revision, body) VALUES (?, ?, ?, ?)",
+                            (task.task_id, task.request.request_id, next_revision, body),
+                        )
+                    except sqlite3.IntegrityError as error:
+                        raise ConcurrentTaskUpdate("request was created in another process") from error
                 else:
                     result = connection.execute(
                         "UPDATE tasks SET revision = ?, body = ? "
@@ -181,3 +206,10 @@ class SyntheticSqliteTaskStore:
         finally:
             connection.close()
         task.revision = next_revision
+
+
+class SyntheticSqliteTaskStore(SqliteTaskStore):
+    """Preserve the isolated synthetic CLI and existing database format."""
+
+    def __init__(self, path: Path):
+        super().__init__(path)

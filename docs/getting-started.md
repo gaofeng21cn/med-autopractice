@@ -70,4 +70,4 @@ python3 scripts/map_runtime.py show --store "$map_run_dir/tasks.sqlite" \
 | 学习如何配置部署依赖、站点调查和操作档案 | [部署档案演练](site-integration.md#运行合成部署示例) |
 | 替换提案生成器或实现系统适配器 | [二次开发](adapter-development.md) |
 
-公开版提供合成运行时和只读部署计划。真实临床执行须由各站点完成适配、授权和逐项资格验证。
+[本地部署演练](local-deployment.md)使用与站点相同的入口，支持一期工作流和后续队列、随访。真实临床执行由各站点完成适配、授权和逐项资格验证。

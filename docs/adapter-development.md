@@ -23,6 +23,6 @@ python3 examples/synthetic/custom_proposer.py
 3. 在自有宿主通过 `build_runtime(knowledge, system, audit, store, expected_states)` 组装。该工厂为工作流目录中所有具有写入依赖的能力建立策略，因此 `expected_states` 要覆盖这些能力。站点通过适配器的 `can_apply` 逐项检查写入资格。[运行时组装](../src/med_autopractice/runtime.py)
 4. 对每个候选写入场景验证提交前审批、提交后从目标系统回读、超时后的唯一对象回查，以及医生最终验收。任务库、审计和回读证据采用部署方获准的存储与访问控制。[目标系统回读](hospital-adapters.md) · [KVM 界面资格](kvm-ui-qualification.md)
 
-开发时用 `build_synthetic_runtime` 和随仓库提供的合成存储运行回归。公开 CLI 只加载合成系统。站点适配、配置和运行证据由部署方在仓库外管理。
+开发时用 `build_synthetic_runtime` 和随仓库提供的合成存储运行回归。公开 CLI 通过显式 `--site` 装配私有适配。站点适配、配置和运行证据由部署方在仓库外管理。[本地部署](local-deployment.md)
 
 修改纳入插件的文件后，维护者用 `python3 scripts/package_metadata.py --write-lock` 更新内容锁，再运行项目检查和相关测试。[贡献指南](../CONTRIBUTING.md)

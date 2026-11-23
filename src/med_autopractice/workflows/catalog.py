@@ -100,3 +100,16 @@ PILOT_WORKFLOWS = MappingProxyType({
     capability_id: PHASE1_WORKFLOWS[capability_id]
     for capability_id in ("write_inpatient_notes", "revise_orders")
 })
+
+
+LOCAL_WORKFLOWS = MappingProxyType({
+    **PHASE1_WORKFLOWS,
+    "build_disease_cohort": WorkflowDefinition(
+        "build_disease_cohort", ("patient_context", "cohort_facts"), False,
+        ("read_cohort_facts",), ("cohort_rules",), medical_proposal=False,
+    ),
+    "manage_followup": WorkflowDefinition(
+        "manage_followup", ("patient_context", "followup_events"), False,
+        ("read_followup_events",), ("followup_rules",), medical_proposal=False,
+    ),
+})

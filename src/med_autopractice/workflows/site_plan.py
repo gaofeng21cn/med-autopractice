@@ -6,11 +6,11 @@ from dataclasses import dataclass
 import json
 from pathlib import Path
 
-from med_autopractice.workflows.catalog import PHASE1_WORKFLOWS
+from med_autopractice.workflows.catalog import LOCAL_WORKFLOWS, PHASE1_WORKFLOWS
 
 
 _OWNERS = {"adapter", "rules", "medicine"}
-_STATES = {"unmapped", "observed", "qualified"}
+_STATES = {"unmapped", "observed", "qualified", "revoked"}
 
 
 @dataclass(frozen=True)
@@ -93,13 +93,17 @@ class SiteCatalog:
     def load(cls, path: Path) -> SiteCatalog:
         return cls(json.loads(path.read_text(encoding="utf-8")))
 
+    def qualified(self, *dependencies: str) -> bool:
+        return all(dep in self.dependencies and self.dependencies[dep].state == "qualified"
+                   for dep in dependencies)
+
     def plan(self, capability_id: str) -> SitePlan:
-        workflow = PHASE1_WORKFLOWS[capability_id]
+        workflow = LOCAL_WORKFLOWS[capability_id]
         steps = []
         blockers = []
 
         def add(phase: str, dependency_id: str):
-            dependency = self.dependencies[dependency_id]
+            dependency = self.dependencies.get(dependency_id, Dependency(dependency_id, phase, "unmapped", None, None))
             steps.append(PlanStep(phase, dependency_id, dependency.owner, dependency.state, dependency.transport))
             if dependency.state != "qualified":
                 blockers.append(dependency_id)

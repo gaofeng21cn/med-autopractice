@@ -58,6 +58,7 @@ def inspect_project():
         'site_transports': catalog['site_transports'],
         'first_pilot': catalog['first_pilot'],
         'callable_capabilities': callable_ids,
+        'local_implementation_capabilities': [item['id'] for item in capabilities if item['status'] == 'local_implementation'],
         'validation_scope': 'Local metadata references and consistency only; not clinical qualification',
     }
 

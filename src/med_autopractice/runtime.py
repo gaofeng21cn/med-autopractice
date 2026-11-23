@@ -10,7 +10,7 @@ task state.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 from med_autopractice.adapters.ports import AuditSink, ClinicalSystem, TaskStore
 from med_autopractice.adapters.synthetic import (
@@ -37,6 +37,8 @@ NEXT_ACTION = {
     "needs_clinician_acceptance": "obtain_clinician_acceptance",
     "changes_requested": "revise_proposal",
     "accepted": "complete",
+    "review_result": "review_read_only_result",
+    "collecting": "refresh_task",
 }
 
 
@@ -90,7 +92,7 @@ class TaskRuntime:
         definition = self.workflows.get(request.capability_id)
         if definition is None:
             raise ValueError(f"unknown capability: {request.capability_id}")
-        if definition.write_dependency is None:
+        if definition.write_dependency is None and request.capability_id not in self.engine.policies:
             raise ValueError(
                 f"{request.capability_id} is a read-only workflow and has no "
                 "execution policy yet"
@@ -104,9 +106,19 @@ class TaskRuntime:
         return self.view(self.engine.submit(task_id, approval))
 
     def review(self, task_id: str, clinician_id: str, *, accepted: bool,
-               feedback: str = "") -> dict:
+               feedback: str = "", digest: str | None = None) -> dict:
         return self.view(self.engine.review(task_id, clinician_id, accepted=accepted,
-                                            feedback=feedback))
+                                            feedback=feedback, digest=digest))
+
+    def refresh(self, task_id: str) -> dict:
+        return self.view(self.engine.refresh(task_id))
+
+    def revise_inputs(self, task_id: str, inputs: dict) -> dict:
+        task = self.engine.get(task_id)
+        if task.snapshot is None or task.status != "changes_requested":
+            raise ValueError("task has no requested correction")
+        proposal = self.engine.knowledge.propose(replace(task.request, inputs=inputs), task.snapshot)
+        return self.view(self.engine.revise(task_id, proposal))
 
     def revise(self, task_id: str, payload: Mapping, *,
                generator_ref: str | None = None,
@@ -169,6 +181,7 @@ class TaskRuntime:
                         "value": fact.value,
                         "source_ref": fact.source_ref,
                         "source_system": fact.source_system,
+                        "source_object_ref": fact.source_object_ref,
                         "effective_at": fact.effective_at,
                         "recorded_at": fact.recorded_at,
                         "unit": fact.unit,

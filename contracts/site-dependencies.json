@@ -287,6 +287,38 @@
       "state": "unmapped",
       "evidence_ref": null,
       "qualification_ref": null
+    },
+    {
+      "id": "read_cohort_facts",
+      "owner": "adapter",
+      "system_id": "inpatient_ehr",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "read_followup_events",
+      "owner": "adapter",
+      "system_id": "portal",
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "cohort_rules",
+      "owner": "rules",
+      "system_id": null,
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
+    },
+    {
+      "id": "followup_rules",
+      "owner": "rules",
+      "system_id": null,
+      "state": "unmapped",
+      "evidence_ref": null,
+      "qualification_ref": null
     }
   ]
 }

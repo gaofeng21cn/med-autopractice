@@ -43,6 +43,20 @@ class PackageManagementTests(unittest.TestCase):
                 "needs_pre_submit_review", "needs_clinician_acceptance", "accepted",
             ])
             self.assertEqual(view["readback"]["object_ref"], "demo://ui/object/1")
+            with tempfile.TemporaryDirectory(prefix="map-deployment-") as directory:
+                site = Path(directory) / "site"
+                subprocess.run(
+                    [sys.executable, str(target / "examples/synthetic/local_deployment.py"), str(site)],
+                    cwd=directory, capture_output=True, check=True,
+                )
+                result = subprocess.run(
+                    [sys.executable, str(target / "scripts/map_runtime.py"), "batch",
+                     "--site", str(site), "--requests", str(site / "batch.json")],
+                    cwd=directory, capture_output=True, text=True, check=True,
+                )
+                rows = json.loads(result.stdout)["requests"]
+                self.assertEqual({item["proposal"]["payload"]["type"] for item in rows},
+                                 {"history", "document_deadlines", "cohort_decision", "followup_schedule"})
 
     def test_materialized_package_rejects_changed_content(self):
         with tempfile.TemporaryDirectory(prefix="map-package-") as temporary:

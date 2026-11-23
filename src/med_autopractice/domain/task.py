@@ -15,7 +15,8 @@ class SubjectRef:
     encounter_id: str
 
     def __post_init__(self) -> None:
-        if not all((self.site_id, self.patient_id, self.encounter_id)):
+        if not all(isinstance(value, str) and value.strip()
+                   for value in (self.site_id, self.patient_id, self.encounter_id)):
             raise ValueError("site, patient, and encounter IDs are required")
 
 
@@ -30,6 +31,7 @@ class Fact:
     recorded_at: str | None = None
     unit: str | None = None
     status: str = "observed"
+    details: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.status not in {
@@ -63,6 +65,7 @@ class TaskRequest:
     intent: str
     subject: SubjectRef
     authority_ref: str
+    inputs: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -93,8 +96,9 @@ class Proposal:
 class TaskPolicy:
     capability_id: str
     requires_pre_submit_review: bool
-    expected_system_state: str
+    expected_system_state: str | None
     required_scopes: tuple[str, ...] = ()
+    deployment_revision: str = ""
 
     def __post_init__(self) -> None:
         order_changes = {

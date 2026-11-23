@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(1, str(ROOT))
 
-from med_autopractice.workflows.catalog import PHASE1_WORKFLOWS
+from med_autopractice.workflows.catalog import LOCAL_WORKFLOWS, PHASE1_WORKFLOWS
 from med_autopractice.workflows.site_plan import SiteCatalog
 
 
@@ -61,7 +61,7 @@ def inspect_profile(path: Path, catalog: SiteCatalog, capability_id: str | None,
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("capability_id", nargs="?", choices=tuple(PHASE1_WORKFLOWS))
+    parser.add_argument("capability_id", nargs="?", choices=tuple(LOCAL_WORKFLOWS))
     parser.add_argument("--profile", type=Path,
                         help="private deployment profile outside this repository; defaults to MAP_SITE_PROFILE or the generic template")
     mode = parser.add_mutually_exclusive_group()

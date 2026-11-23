@@ -65,6 +65,15 @@
       "scope": "synthetic_only"
     },
     {
+      "entrypoint_id": "med-autopractice.local-runtime",
+      "kind": "cli",
+      "argv": [
+        "python3",
+        "scripts/map_runtime.py"
+      ],
+      "scope": "explicit_site"
+    },
+    {
       "entrypoint_id": "med-autopractice.demo",
       "kind": "cli",
       "argv": [
@@ -186,9 +195,15 @@
       "src/med_autopractice/adapters/fhir.py",
       "examples/synthetic/fhir_read.py",
       "examples/synthetic/configure_site.py",
-      "docs/hospital-adapters.md"
+      "docs/hospital-adapters.md",
+      "src/med_autopractice/deployment.py",
+      "src/med_autopractice/medicine/proposals.py",
+      "src/med_autopractice/workflows/results.py",
+      "examples/synthetic/local_provider.py",
+      "examples/synthetic/local_deployment.py",
+      "docs/local-deployment.md"
     ],
-    "digest": "sha256:9defe35a176361568c8a4758d39e371d32e91514fe5101f86d214382005975b9"
+    "digest": "sha256:16b208b61c592dbdcf73893f4ea3f1eb2c81d3b8b46c1dd54ff9cd8cd167745f"
   },
   "management_scope": "local_product"
 }

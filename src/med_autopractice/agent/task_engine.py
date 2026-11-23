@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -13,7 +14,7 @@ from uuid import uuid4
 from med_autopractice.adapters.ports import AuditSink, ClinicalSystem, TaskStore
 from med_autopractice.agent.task_store import InMemoryTaskStore
 from med_autopractice.domain.task import (
-    AuditEvent, ClinicianApproval, Proposal, ReviewDecision, Task, TaskPolicy,
+    AuditEvent, ClinicianApproval, ExecutionReceipt, Proposal, ReviewDecision, Snapshot, Task, TaskPolicy,
     TaskRequest,
 )
 from med_autopractice.medicine.ports import ClinicalKnowledge
@@ -44,20 +45,31 @@ class TaskEngine:
         self,
         knowledge: ClinicalKnowledge,
         system: ClinicalSystem,
-        audit: AuditSink,
+        audit: AuditSink | None,
         policies: dict[str, TaskPolicy],
         store: TaskStore | None = None,
+        *,
+        authorize: Callable[[str, TaskRequest, ClinicianApproval | None], bool] | None = None,
+        apply_bound: Callable[[Task, ClinicianApproval | None, str | None], ExecutionReceipt] | None = None,
     ):
         self.knowledge = knowledge
         self.system = system
         self.audit = audit
         self.policies = policies
+        self.authorize = authorize
+        self.apply_bound = apply_bound
         self.store = store if store is not None else InMemoryTaskStore()
+
+    def _require_access(self, action: str, request: TaskRequest,
+                        decision: ClinicianApproval | None = None) -> None:
+        if self.authorize is not None and self.authorize(action, request, decision) is not True:
+            raise PermissionError("deployment refused the clinical action")
 
     def get(self, task_id: str) -> Task:
         task = self.store.get(task_id)
         if task is None:
             raise KeyError(task_id)
+        self._require_access("read", task.request)
         return task
 
     def _event(
@@ -71,9 +83,14 @@ class TaskEngine:
             at_utc=datetime.now(timezone.utc).isoformat(),
             evidence_refs=refs, screenshot_ref=screenshot_ref, resource_version_ref=resource_version_ref,
         )
-        self.audit.append(event)
         task.events.append(event)
-        self.store.save(task)
+        try:
+            self.store.save(task)
+        except Exception:
+            task.events.pop()
+            raise
+        if self.audit is not None:
+            self.audit.append(event)
 
     @staticmethod
     def _check_proposal(task: Task, proposal: Proposal) -> None:
@@ -96,6 +113,7 @@ class TaskEngine:
         if request.capability_id not in self.policies:
             raise ValueError("capability has no execution policy")
         self.store.validate_request(request)
+        self._require_access("read", request)
         previous = self.store.get_by_request(request.request_id)
         if previous is not None:
             if previous.request != request:
@@ -104,32 +122,70 @@ class TaskEngine:
 
         task = Task(task_id=uuid4().hex, request=request, policy=self.policies[request.capability_id])
         self._event(task, "request", "accepted", (request.authority_ref,))
+        return self._prepare(task, auto_submit=auto_submit)
+
+    @staticmethod
+    def _check_snapshot(task: Task, snapshot: Snapshot) -> None:
+        if snapshot.subject != task.request.subject or not snapshot.revision or not snapshot.trace_refs:
+            raise ValueError("system returned an unbound patient/encounter snapshot")
+        if len({fact.fact_id for fact in snapshot.facts}) != len(snapshot.facts):
+            raise ValueError("system returned duplicate fact IDs")
+        if any(not fact.fact_id or not fact.source_ref for fact in snapshot.facts):
+            raise ValueError("system returned facts without source references")
+
+    def refresh(self, task_id: str) -> Task:
+        task = self.get(task_id)
+        allowed = {"collecting", "blocked", "needs_information", "needs_refresh",
+                   "needs_policy_review", "draft_only", "review_result",
+                   "needs_pre_submit_review", "ready_to_submit"}
+        if task.policy.expected_system_state is None:
+            allowed.add("changes_requested")
+        if task.status not in allowed:
+            raise ValueError("task cannot be refreshed from this state")
+        if task.idempotency_key:
+            raise ValueError("a submitted task must use reconciliation or a new request")
+        current = self.policies.get(task.request.capability_id)
+        if current is None:
+            raise PermissionError("workflow is unavailable in this deployment")
+        task.policy = current
+        task.proposal = None
+        task.prepared_digest = None
+        task.snapshot = None
+        task.status = "collecting"
+        self._event(task, "refresh", "started")
+        return self._prepare(task)
+
+    def _prepare(self, task: Task, *, auto_submit: bool = False) -> Task:
+        request = task.request
+        policy = task.policy
         try:
             snapshot = self.system.read_context(request.subject, request.capability_id)
-            if snapshot.subject != request.subject or not snapshot.revision or not snapshot.trace_refs:
-                raise ValueError("system returned an unbound patient/encounter snapshot")
-            if len({fact.fact_id for fact in snapshot.facts}) != len(snapshot.facts):
-                raise ValueError("system returned duplicate fact IDs")
-            if any(not fact.fact_id or not fact.source_ref for fact in snapshot.facts):
-                raise ValueError("system returned facts without source references")
+            self._check_snapshot(task, snapshot)
             task.snapshot = snapshot
             self._event(task, "read_context", "observed", snapshot.trace_refs)
+            covered = {item.scope for item in snapshot.coverage if item.complete}
+            if self.authorize is not None and not set(policy.required_scopes) <= covered:
+                task.status = "needs_information"
+                self._event(task, "prepare_proposal", task.status)
+                return task
             proposal = self.knowledge.propose(request, snapshot)
             self._check_proposal(task, proposal)
             task.proposal = proposal
             task.prepared_digest = proposal.digest
-            policy = self.policies[request.capability_id]
-            covered = {item.scope for item in snapshot.coverage if item.complete}
             if not set(policy.required_scopes) <= covered:
                 task.status = "needs_information"
+            elif policy.expected_system_state is None:
+                task.status = "review_result"
             elif not self.system.can_apply(proposal):
                 task.status = "draft_only"
             else:
                 task.status = "needs_pre_submit_review" if policy.requires_pre_submit_review else "ready_to_submit"
             self._event(task, "prepare_proposal", task.status, (proposal.digest,))
-        except Exception:
+        except Exception as error:
             task.status = "blocked"
-            self._event(task, "prepare", "failed")
+            self._event(task, "prepare", "failed", (type(error).__name__,))
+            if self.authorize is not None:
+                return task
             raise
 
         if auto_submit and task.status == "ready_to_submit":
@@ -158,6 +214,7 @@ class TaskEngine:
         ):
             self._event(task, "clinician_authorization", "rejected")
             raise ValueError("exact clinician approval is required")
+        self._require_access("submit", task.request, approval)
         try:
             current = self.system.read_context(task.request.subject, task.request.capability_id)
         except Exception:
@@ -172,7 +229,11 @@ class TaskEngine:
             task.status = "needs_information"
             self._event(task, "pre_submit_check", "incomplete_sources")
             return task
-        if current.subject != task.request.subject or current.revision != task.snapshot.revision:
+        if current.subject != task.request.subject or current.revision != task.snapshot.revision or (
+            self.authorize is not None and (
+                current.facts != task.snapshot.facts or current.coverage != task.snapshot.coverage
+            )
+        ):
             task.status = "needs_refresh"
             self._event(task, "pre_submit_check", "stale_facts")
             return task
@@ -192,7 +253,8 @@ class TaskEngine:
         task.status = "execution_uncertain"
         self._event(task, "system_submit", "attempted", (key,))
         try:
-            receipt = self.system.apply(task.proposal, key, prior_ref)
+            receipt = (self.apply_bound(task, approval, prior_ref) if self.apply_bound is not None
+                       else self.system.apply(task.proposal, key, prior_ref))
             task.receipt = receipt
             if not receipt.object_ref or not receipt.trace_refs:
                 raise ValueError("system submission has no object or operation trace")
@@ -217,7 +279,8 @@ class TaskEngine:
             and readback.subject == task.request.subject
             and readback.object_ref == receipt.object_ref
             and readback.proposal_digest == task.proposal.digest
-            and readback.visible_payload == task.proposal.payload
+            and json.dumps(readback.visible_payload, ensure_ascii=False, sort_keys=True)
+            == json.dumps(task.proposal.payload, ensure_ascii=False, sort_keys=True)
             and readback.state == policy.expected_system_state
             and bool(readback.screenshot_ref or (readback.resource_version_ref and readback.observed_at))
             and bool(readback.trace_refs)
@@ -227,6 +290,7 @@ class TaskEngine:
         task = self.get(task_id)
         if task.status != "execution_uncertain" or not task.idempotency_key:
             raise ValueError("task has no uncertain submission to reconcile")
+        self._require_access("reconcile", task.request)
         try:
             receipt = self.system.find_submission(task)
         except Exception:
@@ -256,21 +320,35 @@ class TaskEngine:
                     readback.screenshot_ref, readback.resource_version_ref)
         return task
 
-    def review(self, task_id: str, clinician_id: str, *, accepted: bool, feedback: str = "") -> Task:
+    def review(self, task_id: str, clinician_id: str, *, accepted: bool, feedback: str = "",
+               digest: str | None = None) -> Task:
         task = self.get(task_id)
-        if task.status != "needs_clinician_acceptance" or not clinician_id:
+        if self.authorize is not None:
+            if task.snapshot is None or not digest or digest != task.prepared_digest:
+                raise ValueError("review needs the exact result digest")
+            self._require_access("review", task.request, ClinicianApproval(
+                task_id, clinician_id, digest, task.snapshot.revision,
+            ))
+        read_only = task.policy.expected_system_state is None
+        if task.status not in {"needs_clinician_acceptance", "review_result"} or not clinician_id:
             self._event(task, "clinician_review", "rejected_state")
             raise ValueError("verified system readback and clinician identity are required")
         if (
-            task.proposal is None or task.readback is None or task.receipt is None
-            or task.prepared_digest != task.proposal.digest
-            or not self._readback_matches(task, task.receipt, task.readback, task.policy)
+            task.proposal is None or task.prepared_digest != task.proposal.digest
+            or (not read_only and (task.readback is None or task.receipt is None
+                                   or not self._readback_matches(task, task.receipt, task.readback, task.policy)))
         ):
             self._event(task, "clinician_review", "stale_evidence")
             raise ValueError("proposal or system evidence changed before review")
         if not accepted and not feedback.strip():
             self._event(task, "clinician_review", "missing_feedback")
             raise ValueError("correction feedback is required")
+        if accepted and self.authorize is not None and not read_only:
+            latest = self.system.read_back(task.receipt, task)
+            if not self._readback_matches(task, task.receipt, latest, task.policy):
+                task.status = "execution_uncertain"
+                self._event(task, "clinician_review", "target_changed", latest.trace_refs)
+                return task
         next_status = "accepted" if accepted else "changes_requested"
         previous_status = task.status
         task.status = next_status
@@ -278,8 +356,8 @@ class TaskEngine:
         task.reviews.append(ReviewDecision(
             clinician_id=clinician_id, accepted=accepted,
             proposal_digest=task.prepared_digest,
-            screenshot_ref=task.readback.screenshot_ref,
-            resource_version_ref=task.readback.resource_version_ref,
+            screenshot_ref=task.readback.screenshot_ref if task.readback else None,
+            resource_version_ref=task.readback.resource_version_ref if task.readback else None,
             feedback=feedback, at_utc=datetime.now(timezone.utc).isoformat(),
         ))
         refs = (clinician_id,) if accepted else (clinician_id, sha256(feedback.encode()).hexdigest())
@@ -310,6 +388,8 @@ class TaskEngine:
             self._event(task, "revise_proposal", "unchanged")
             raise ValueError("correction must change the proposal")
         policy = task.policy
+        if policy.expected_system_state is None:
+            raise ValueError("read-only results must be regenerated from their sources")
         next_status = "needs_pre_submit_review" if policy.requires_pre_submit_review else "ready_to_submit"
         previous = (task.proposal, task.prepared_digest, task.readback, task.review_feedback, task.status)
         task.proposal = proposal

@@ -2,7 +2,7 @@
 
 全部一期功能见 [产品范围](product.md)；机器可读状态见 [能力目录](../contracts/capabilities.json)。
 
-本页只定义业务任务的输入、产物和复核要求。医学判断与业务工作流的代码边界以[架构文档](architecture.md#模块与合同归属)为准；九项一期任务的语义依赖在 `workflows/catalog.py`，首批两项有合成执行验证，真实院内字段和规则尚未验收。
+本页只定义业务任务的输入、产物和复核要求。医学判断与业务工作流的代码边界以[架构文档](architecture.md#模块与合同归属)为准；一期九项和后续两项在 `workflows/catalog.py` 定义语义依赖，并在[合成站点](local-deployment.md)通过本地入口演练。真实院内字段和规则由各站点逐项验收。
 
 `python3 scripts/site_plan.py revise_orders` 可输出医嘱调整所需的读取、规则、医学提案、医生提交前确认、系统录入、回读和最终验收步骤及阻断项。命令默认读取未配置的通用依赖模板；部署方可通过 `MAP_SITE_PROFILE` 指向仓库外的私有 JSON profile。命令只读本地元数据，不连接设备或患者。`observed` 不等于操作合格；`dependencies_qualified` 也不是能力目录的 `callable` 或临床执行许可。初版列出保守的资料源全集；实际任务仍需按医生目标、时间范围与相关性选择结果来源，不能机械读取所有历史检查。
 

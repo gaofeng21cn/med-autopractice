@@ -49,7 +49,7 @@ MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_
 
 医院系统的正式患者事实、采集包、院内制度与页面操作 JSON 仍由医院/部署 owner 管理。`Snapshot` 是带患者/就诊版本的本次任务事实，不能当作长期知识；site profile、survey 和 playbook 也继续走 MAP 的外部部署合同，不自动注册为个人知识。需要把可复用正文交给医学提案组件时，调用方先从 Framework 获取获授权来源和精确哈希，再把引用作为 `Proposal.knowledge_refs` 传入；真实临床动作仍须独立完成能力资格、医生复核和系统回读。
 
-`KnowledgeSources` 是通用来源客户端，`ClinicalKnowledge.propose(request, snapshot)` 是医学提案接口，两者职责不同。生产医学组件通过 `build_runtime` 的现有注入点组合来源与医学实现，不能把知识检索结果直接当作已通过医学审查的提案。当前公共客户端与合成任务可调用，生产医学组件及其来源选择尚未实现。通用个人上下文仅按任务需要读取；来源缺失、撤权、版本失效或 `knowledge_dependencies.valid=false` 时按公共接口的结果修复，不转为本地正文副本。参数与复核流程见[部署档案](site-integration.md#可复用知识的公共来源入口)。
+`KnowledgeSources` 是通用来源客户端，`ClinicalKnowledge.propose(request, snapshot)` 是医学提案接口，两者职责不同。通过 `build_runtime` 可以组合医学实现和获准来源。本地站点入口分开使用批准的规则、事实与医生交代的输入。独立模型及其来源选择需按站点验收。通用个人上下文仅按任务需要读取；来源缺失、撤权、版本失效或 `knowledge_dependencies.valid=false` 时按公共接口的结果修复，不转为本地正文副本。参数与复核流程见[部署档案](site-integration.md#可复用知识的公共来源入口)。
 
 医生在 Codex 中发起任务，MAP 内核调用医学知识组件产生候选提案，再由站点适配器执行获准操作。医学组件持有建议及依据，内核负责身份、版本、权限、审阅和恢复，适配器负责读取来源、提交和独立回读。
 
@@ -58,8 +58,8 @@ MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_
 | 唯一 owner | 当前代码或文档 | 稳定边界与当前差距 |
 |---|---|---|
 | 患者事实、提案、任务和审阅对象 | `domain/task.py` | `Snapshot` 绑定患者、就诊、来源与采集范围；`Proposal` 绑定能力、事实引用、生成者、知识引用和 `map-proposal.v1` 版本。领域对象不决定诊疗内容或 UI 坐标。 |
-| 医学判断 | `medicine/ports.py`、`medicine/router.py` | `ClinicalKnowledge.propose(request, snapshot)` 返回候选 `Proposal`；按能力路由到不同实现。当前只有接口、路由和合成实现，没有临床模型、知识库或有效医学规则。 |
-| 业务工作流 | `workflows/catalog.py`、`workflows/site_plan.py`、`agent/task_engine.py`、`runtime.py` | 九项一期任务已有依赖顺序与阻断检查；首批两项有合成数据任务内核验证。`runtime.py` 是宿主唯一入口，负责装配 policy、投影任务视图与转达复核决定；目前只接合成系统。其余任务的真实临床编排未实现。 |
+| 医学判断 | `medicine/ports.py`、`medicine/router.py` | `ClinicalKnowledge.propose(request, snapshot)` 返回候选 `Proposal`；按能力路由到不同实现。本地工作流串联院内事实、批准的规则和医生提供的判断，生成带来源的草稿或候选变更。站点可另行部署经其验证的医学模型或知识来源。 |
+| 业务工作流 | `workflows/catalog.py`、`workflows/site_plan.py`、`agent/task_engine.py`、`runtime.py` | 一期九项及后续两项共用任务状态和部署依赖。`runtime.py` 是宿主唯一入口，负责装配 policy、投影任务视图与转达复核决定；通过显式站点运行时装配授权服务和适配器，实际开放由本院验收。 |
 | 系统语义与接入 | `adapters/ports.py`、`adapters/fhir.py`、`adapters/ui.py`、`adapters/kvm.py` | `ClinicalSystem` 规定查询、提交、回读及恢复。FHIR 组件读取单项定量结果，Computer Use 与 KVM 共用界面检查，具体部署维护自己的操作实现。 |
 | 患者事实清洗与结构化病历 | `records/clinical_record.py`、`contracts/structured-clinical-record.schema.json` | 把仓库外采集包清洗为带每节来源、显式缺口和显式冲突的结构化病历；规则通用、无院方与患者内容。规则见[病历收集与结构化](clinical-record.md)。它只整理已采集内容，不做临床判断，也不写回院内系统。 |
 
@@ -73,7 +73,7 @@ MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_
 
 ### 稳定任务契约与可替换实现
 
-其他 Agent 通过 MAP Codex 主 Skill 发起任务。主 Skill 把医生意图和获准作用范围交给 MAP，返回任务状态、待审提案、来源和系统证据引用；Codex 展示并传递医生的复核决定。`runtime.py` 是主 Skill 调用的本地边界，内部仍是 `agent/task_engine.py` 的开发内核；公开运行时组合合成医学提案、合成系统与合成任务存储。主 Skill 另可整理已提供的采集包，并调用医院适配 Skill 核对实际部署需要的操作。
+其他 Agent 通过 MAP Codex 主 Skill 发起任务。主 Skill 把医生意图和获准作用范围交给 MAP，返回任务状态、待审提案、来源和系统证据引用；Codex 展示并传递医生的复核决定。`runtime.py` 是主 Skill 调用的本地边界，内部仍是 `agent/task_engine.py` 的开发内核；显式站点运行时装配本院适配、规则和存储，合成运行时用于独立开发验证。主 Skill 另可整理已提供的采集包，并调用医院适配 Skill 核对实际部署需要的操作。
 
 医学知识、制度规则与系统操作分开维护。医学知识组件可以结合专业知识库和患者事实生成提案，但不能自己点击系统或批准诊疗决定；院内制度包决定文书要求、模板和时限；业务工作流执行收集、核对、提交、回读、复核和修订。更换知识源或医学模型不改工作流与系统适配器；更换 HIS 或 IPKVM 不改临床任务的完成定义。
 
