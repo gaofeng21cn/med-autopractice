@@ -101,7 +101,9 @@ python3 scripts/site_playbook.py --survey "$map_site_dir/survey.json" \
 
 ## 可复用知识的公共来源入口
 
-部署操作 JSON 保留原 owner；可供其他任务复用的 Markdown 方法、制度说明与医学资料来源通过 Framework 现有 registry 绑定，不在 MAP 新建个人知识库。`scripts/map_knowledge.py` 是无本地存储的 CLI 薄入口，固定消费者域为 `med-autopractice`；只有已授予该域及工作区/项目范围的来源可读，写回还须有独立写入 grant。可用 `OPL_BIN` 指定 Framework 的确切可执行文件。
+跨站点的操作和复核方法由 MAP 维护在随包的[产品知识目录](../contracts/durable_knowledge_catalog.json)。Codex 的两个 Skill 按任务直接读取正文。OPL 环境可用 `opl knowledge list --repo <MAP 包根>` 查看目录，也可按 `site-adaptation` 或 `record-review` 召回本次所需的方法。更新正文时同步更新目录记录的摘要和软件包内容锁。
+
+部署操作 JSON 由站点维护。工作区或项目的制度说明、医学资料和其他私有知识通过 Framework 现有 registry 绑定。`scripts/map_knowledge.py` 是无本地存储的 CLI 薄入口，固定消费者域为 `med-autopractice`。读取范围随来源授权及工作区、项目绑定确定，写回须有独立写入 grant。可用 `OPL_BIN` 指定 Framework 的确切可执行文件。
 
 ```sh
 python3 scripts/map_knowledge.py --workspace /private/workspace sources

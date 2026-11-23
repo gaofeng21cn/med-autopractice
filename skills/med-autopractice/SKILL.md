@@ -18,6 +18,8 @@ description: 使用 Med Auto Practice（MAP）开始或恢复医生主导的临�
 
 ## 整理已有资料
 
+接手历史病历、审核结构化结果或导出跨病例数据前，先读随包的[历史病历整理与研究数据复核经验](../../agent/knowledge/clinical-record-review.md)。先辨认输入是采集包还是已结构化病历，再按交付用途决定是否补取原文或导出研究长表。
+
 对采集包使用 `scripts/structure_record.py`，保留每项事实的时间、来源和原文。阅读版依次给出结构化病历、问题清单、病历原文。需要跨病例汇总时再导出固定列研究长表及归一化编码。缺项留空，冲突并列，诊断仅按原文归并。复核注记保存在获准的工作目录，`--review-notes` 可将对应条目标为“※需核实”。[病历结构化](../../docs/clinical-record.md) · [研究数据集](../../docs/research-dataset.md)
 
 ## 在同一任务中复核

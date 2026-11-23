@@ -1,4 +1,5 @@
 """The native carrier must carry a runnable, truthful MAP package."""
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,22 @@ class PackageManagementTests(unittest.TestCase):
             destination = target / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / relative, destination)
+
+    def test_materialized_product_knowledge_matches_catalog_and_skill_links(self):
+        with tempfile.TemporaryDirectory(prefix="map-knowledge-") as temporary:
+            target = Path(temporary)
+            self.materialize(target)
+            catalog = json.loads((target / "contracts/durable_knowledge_catalog.json").read_text(encoding="utf-8"))
+            items = {item["knowledge_id"]: item["body_ref"] for item in catalog["items"]}
+            for skill, knowledge_id in (
+                ("map-site-adaptation", "med-autopractice.site-adaptation"),
+                ("med-autopractice", "med-autopractice.clinical-record-review"),
+            ):
+                body_ref = items[knowledge_id]
+                body = (target / body_ref["ref"]).read_bytes()
+                self.assertEqual(body_ref["sha256"], "sha256:" + hashlib.sha256(body).hexdigest())
+                skill_text = (target / "skills" / skill / "SKILL.md").read_text(encoding="utf-8")
+                self.assertIn(f"](../../{body_ref['ref']})", skill_text)
 
     def test_materialized_package_runs_without_developer_checkout(self):
         with tempfile.TemporaryDirectory(prefix="map-package-") as temporary:

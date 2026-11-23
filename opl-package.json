@@ -115,9 +115,12 @@
       "README.en.md",
       "README.md",
       "agent/manifest.json",
+      "agent/knowledge/site-adaptation.md",
+      "agent/knowledge/clinical-record-review.md",
       "assets/branding/medautopractice-logo.png",
       "assets/branding/medautopractice-overview.png",
       "contracts/capabilities.json",
+      "contracts/durable_knowledge_catalog.json",
       "contracts/site-dependencies.json",
       "contracts/site-playbook.schema.json",
       "contracts/site-survey.schema.json",
@@ -203,7 +206,7 @@
       "examples/synthetic/local_deployment.py",
       "docs/local-deployment.md"
     ],
-    "digest": "sha256:3bb707ab1f0c02b2b38aecc530b696699fc85b12e52bf4fd06f4883de9b275c3"
+    "digest": "sha256:643af18dd94db1d6de12a1b672e21197f894cb3bb512392d243d910ceab9477c"
   },
   "management_scope": "local_product"
 }

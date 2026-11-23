@@ -1,0 +1,64 @@
+{
+  "surface_kind": "opl_durable_knowledge_catalog",
+  "version": "durable-knowledge-catalog.v2",
+  "owner": "one-person-lab",
+  "domain_id": "med-autopractice",
+  "items": [
+    {
+      "surface_kind": "opl_durable_knowledge_item",
+      "version": "durable-knowledge-item.v2",
+      "knowledge_id": "med-autopractice.site-adaptation",
+      "title": "院内系统适配与只读取数经验",
+      "scope": {
+        "kind": "product",
+        "id": "med-autopractice"
+      },
+      "content_kind": "mechanism",
+      "owner": "med-autopractice",
+      "body_ref": {
+        "kind": "repo_path",
+        "ref": "agent/knowledge/site-adaptation.md",
+        "sha256": "sha256:a32b3bc343ab4182e872c80843d80ce2743af956296773f857719e96ba2260cc"
+      },
+      "applicability": {
+        "domains": ["med-autopractice"],
+        "stages": ["site-adaptation"]
+      },
+      "status": "active",
+      "reviewed_at": "2026-11-23T00:00:00+08:00",
+      "next_review_at": "2027-11-23T00:00:00+08:00",
+      "authority_boundary": {
+        "semantic_body_owner": "med-autopractice",
+        "opl_role": "catalog_recall_and_receipt_projection_only"
+      }
+    },
+    {
+      "surface_kind": "opl_durable_knowledge_item",
+      "version": "durable-knowledge-item.v2",
+      "knowledge_id": "med-autopractice.clinical-record-review",
+      "title": "历史病历整理与研究数据复核经验",
+      "scope": {
+        "kind": "product",
+        "id": "med-autopractice"
+      },
+      "content_kind": "mechanism",
+      "owner": "med-autopractice",
+      "body_ref": {
+        "kind": "repo_path",
+        "ref": "agent/knowledge/clinical-record-review.md",
+        "sha256": "sha256:43f042a7e0fb9a04d4547bdeed3b6197fb0830f77b7f0ded487223b90885b442"
+      },
+      "applicability": {
+        "domains": ["med-autopractice"],
+        "stages": ["record-review"]
+      },
+      "status": "active",
+      "reviewed_at": "2026-11-23T00:00:00+08:00",
+      "next_review_at": "2027-11-23T00:00:00+08:00",
+      "authority_boundary": {
+        "semantic_body_owner": "med-autopractice",
+        "opl_role": "catalog_recall_and_receipt_projection_only"
+      }
+    }
+  ]
+}
