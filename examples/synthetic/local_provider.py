@@ -4,6 +4,7 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 import json
 import sqlite3
+from time import sleep
 
 from med_autopractice.domain.task import ExecutionReceipt, Fact, Snapshot, SourceCoverage, SubjectRef, SystemReadback
 from med_autopractice.workflows.catalog import LOCAL_WORKFLOWS
@@ -59,6 +60,8 @@ class DemoProvider:
     def apply_bound(self, request, proposal, revision, key, existing_ref, approval):
         if not self.authorize("submit", request, approval):
             raise PermissionError("synthetic clinician authorization required")
+        if (self.directory / "simulate-write-delay").exists():
+            sleep(0.3)
         body = json.dumps(proposal.payload, ensure_ascii=False, sort_keys=True)
         subject = json.dumps(asdict(request.subject), sort_keys=True)
         state = "saved_draft" if proposal.payload["type"] == "note_draft" else "recorded"

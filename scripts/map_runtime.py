@@ -75,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     refresh = commands.add_parser("refresh", parents=[common],
                                   help="re-read sources and prepare the same unsubmitted task")
     refresh.add_argument("--task-id", required=True)
+    refresh.add_argument("--inputs", type=Path, help="updated clinician input object for an unsubmitted site task")
     batch = commands.add_parser("batch", parents=[common],
                                 help="start or resume an explicit list of read-only requests")
     batch.add_argument("--requests", type=Path, required=True)
@@ -141,7 +142,14 @@ def main() -> int:
         elif args.command == "show":
             view = runtime.show(args.task_id)
         elif args.command == "refresh":
-            view = runtime.refresh(args.task_id)
+            inputs = None
+            if args.inputs:
+                if not args.site:
+                    raise ValueError("structured inputs require a site task")
+                inputs = json.loads(args.inputs.expanduser().read_text(encoding="utf-8"))
+                if not isinstance(inputs, dict):
+                    raise ValueError("inputs must be a JSON object")
+            view = runtime.refresh(args.task_id, inputs=inputs)
         elif args.command == "batch":
             if not args.site:
                 raise ValueError("batch requires a deployment")

@@ -74,7 +74,7 @@ class QualifiedSystem:
         if approval is None or not self.can_apply(task.proposal):
             raise PermissionError("deployment has unresolved write dependencies")
         return self.provider.apply_bound(
-            task.request, task.proposal, task.snapshot.revision, task.idempotency_key,
+            task.effective_request, task.proposal, task.snapshot.revision, task.idempotency_key,
             existing_object_ref, approval,
         )
 

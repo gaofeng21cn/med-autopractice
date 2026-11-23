@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from datetime import date
 from typing import Any
 
-from med_autopractice.domain.task import Fact
+from med_autopractice.domain.task import Fact, WorkflowInputRequired
 
 NOTES = frozenset({"write_inpatient_notes", "write_outpatient_notes"})
 ORDERS = frozenset({"prepare_admission_orders", "revise_orders", "prepare_discharge_medication"})
@@ -43,15 +43,15 @@ def make_note(inputs: dict, facts: tuple[Fact, ...], rule: Mapping, authority: s
         if section in entries:
             lines.append({"text": text(entries[section], "section text"), "source_ref": authority})
         if not lines:
-            raise ValueError(f"required note section has no source: {section}")
+            raise WorkflowInputRequired(f"sections.{section}")
         result.append({"section": section, "entries": lines})
     return {"type": "note_draft", "sections": result}
 
 
 def make_orders(inputs: dict, facts: tuple[Fact, ...], rule: Mapping, *, group: bool = False) -> dict:
-    changes = objects(inputs.get("changes"), "changes")
-    if not changes:
-        raise ValueError("clinician plan must specify at least one change")
+    if inputs.get("changes") in (None, []):
+        raise WorkflowInputRequired("changes")
+    changes = objects(inputs["changes"], "changes")
     catalog_items = facts_of(facts, "catalog_item")
     catalog = {text(f.details.get("code"), "source catalog code"): f for f in catalog_items}
     current_kind = "order_set_item" if group else "current_order"

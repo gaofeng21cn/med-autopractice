@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import asdict
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -104,7 +106,8 @@ def _task_from_json(body: str) -> Task:
         receipt=receipt, readback=readback, review_feedback=data["review_feedback"],
         idempotency_key=data["idempotency_key"],
         reviews=[ReviewDecision(**review) for review in data["reviews"]],
-        events=events,
+        events=events, input_override=data.get("input_override"),
+        required_input=tuple(data.get("required_input", ())),
     )
 
 
@@ -142,6 +145,24 @@ class SqliteTaskStore:
                     raise PermissionError("task database belongs to another deployment")
         finally:
             connection.close()
+
+    @contextmanager
+    def operation(self, task_id: str):
+        if not self.site_id:
+            yield
+            return
+        import fcntl
+
+        # Keep the whole target operation single-writer. SQLite CAS still protects each commit.
+        lock_dir = self.path.parent / ".operations"
+        lock_dir.mkdir(mode=0o700, exist_ok=True)
+        name = sha256(task_id.encode()).hexdigest()
+        lock = os.open(lock_dir / name, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(lock)
 
     def _read(self, column: str, value: str) -> Task | None:
         query = {

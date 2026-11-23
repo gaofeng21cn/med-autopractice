@@ -10,6 +10,7 @@ task state.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from contextlib import nullcontext
 from dataclasses import asdict, replace
 
 from med_autopractice.adapters.ports import AuditSink, ClinicalSystem, TaskStore
@@ -28,6 +29,7 @@ from med_autopractice.workflows.catalog import PHASE1_WORKFLOWS, WorkflowDefinit
 NEXT_ACTION = {
     "blocked": "resolve_error",
     "needs_information": "provide_missing_sources",
+    "needs_input": "provide_clinician_input",
     "draft_only": "review_draft_with_clinician",
     "needs_pre_submit_review": "obtain_pre_submit_approval",
     "ready_to_submit": "submit",
@@ -102,23 +104,31 @@ class TaskRuntime:
     def show(self, task_id: str) -> dict:
         return self.view(self.engine.get(task_id))
 
+    def _operation(self, task_id: str):
+        operation = getattr(self.engine.store, "operation", None)
+        return operation(task_id) if operation else nullcontext()
+
     def submit(self, task_id: str, approval: ClinicianApproval | None = None) -> dict:
-        return self.view(self.engine.submit(task_id, approval))
+        with self._operation(task_id):
+            return self.view(self.engine.submit(task_id, approval))
 
     def review(self, task_id: str, clinician_id: str, *, accepted: bool,
                feedback: str = "", digest: str | None = None) -> dict:
-        return self.view(self.engine.review(task_id, clinician_id, accepted=accepted,
-                                            feedback=feedback, digest=digest))
+        with self._operation(task_id):
+            return self.view(self.engine.review(task_id, clinician_id, accepted=accepted,
+                                                feedback=feedback, digest=digest))
 
-    def refresh(self, task_id: str) -> dict:
-        return self.view(self.engine.refresh(task_id))
+    def refresh(self, task_id: str, *, inputs: dict | None = None) -> dict:
+        with self._operation(task_id):
+            return self.view(self.engine.refresh(task_id, inputs=inputs))
 
     def revise_inputs(self, task_id: str, inputs: dict) -> dict:
-        task = self.engine.get(task_id)
-        if task.snapshot is None or task.status != "changes_requested":
-            raise ValueError("task has no requested correction")
-        proposal = self.engine.knowledge.propose(replace(task.request, inputs=inputs), task.snapshot)
-        return self.view(self.engine.revise(task_id, proposal))
+        with self._operation(task_id):
+            task = self.engine.get(task_id)
+            if task.snapshot is None or task.status != "changes_requested":
+                raise ValueError("task has no requested correction")
+            proposal = self.engine.knowledge.propose(replace(task.effective_request, inputs=inputs), task.snapshot)
+            return self.view(self.engine.revise(task_id, proposal))
 
     def revise(self, task_id: str, payload: Mapping, *,
                generator_ref: str | None = None,
@@ -152,7 +162,8 @@ class TaskRuntime:
         return self.view(self.engine.revise(task_id, proposal))
 
     def reconcile(self, task_id: str) -> dict:
-        return self.view(self.engine.reconcile(task_id))
+        with self._operation(task_id):
+            return self.view(self.engine.reconcile(task_id))
 
     def view(self, task: Task) -> dict:
         definition = self.workflows[task.request.capability_id]
@@ -200,6 +211,7 @@ class TaskRuntime:
                 ],
             },
             "missing_information": missing,
+            "required_input": list(task.required_input),
             "proposal": None if task.proposal is None else {
                 "schema_version": task.proposal.schema_version,
                 "digest": task.proposal.digest,

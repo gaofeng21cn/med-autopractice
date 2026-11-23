@@ -108,6 +108,7 @@ class SiteRuntimeTests(unittest.TestCase):
 
     def test_concurrent_submission_has_one_external_write(self):
         task = self.start("write_inpatient_notes")
+        (self.site / "simulate-write-delay").touch()
 
         def submit_once(_):
             return subprocess.run(
@@ -130,3 +131,20 @@ class SiteRuntimeTests(unittest.TestCase):
                           "--accept", "--digest", task["proposal"]["digest"])
         self.assertEqual(result["status"], "execution_uncertain")
         self.assertEqual(result["review"]["decisions"], [])
+
+    def test_clinician_can_provide_missing_plan_without_starting_a_new_task(self):
+        request = self.site / "revise_orders.json"
+        body = json.loads(request.read_text())
+        plan = body.pop("inputs")
+        request.write_text(json.dumps(body))
+        first = self.start("revise_orders")
+        self.assertEqual(first["status"], "needs_input")
+        self.assertEqual(first["required_input"], ["changes"])
+        self.assertTrue(first["snapshot"]["facts"])
+        inputs = self.site / "plan.json"
+        inputs.write_text(json.dumps(plan))
+        prepared = self.cli("refresh", "--task-id", first["task_id"], "--inputs", str(inputs))
+        self.assertEqual(prepared["task_id"], first["task_id"])
+        self.assertEqual(prepared["status"], "needs_pre_submit_review")
+        self.assertEqual(self.start("revise_orders"), prepared)
+        self.assertEqual(self.submit(prepared)["status"], "needs_clinician_acceptance")

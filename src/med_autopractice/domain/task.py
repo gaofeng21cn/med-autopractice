@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from hashlib import sha256
 import json
 from typing import Any
@@ -56,6 +56,14 @@ class Snapshot:
     facts: tuple[Fact, ...]
     trace_refs: tuple[str, ...]
     coverage: tuple[SourceCoverage, ...] = ()
+
+
+class WorkflowInputRequired(ValueError):
+    """An input the clinician can supply after reviewing the sourced context."""
+
+    def __init__(self, *fields: str):
+        super().__init__("workflow needs clinician input")
+        self.fields = fields
 
 
 @dataclass(frozen=True)
@@ -177,3 +185,11 @@ class Task:
     idempotency_key: str | None = None
     reviews: list[ReviewDecision] = field(default_factory=list)
     events: list[AuditEvent] = field(default_factory=list)
+    input_override: dict[str, Any] | None = None
+    required_input: tuple[str, ...] = ()
+
+    @property
+    def effective_request(self) -> TaskRequest:
+        if self.input_override is None:
+            return self.request
+        return replace(self.request, inputs=self.input_override)

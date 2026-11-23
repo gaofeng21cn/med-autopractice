@@ -15,7 +15,7 @@ from med_autopractice.adapters.ports import AuditSink, ClinicalSystem, TaskStore
 from med_autopractice.agent.task_store import InMemoryTaskStore
 from med_autopractice.domain.task import (
     AuditEvent, ClinicianApproval, ExecutionReceipt, Proposal, ReviewDecision, Snapshot, Task, TaskPolicy,
-    TaskRequest,
+    TaskRequest, WorkflowInputRequired,
 )
 from med_autopractice.medicine.ports import ClinicalKnowledge
 
@@ -69,7 +69,7 @@ class TaskEngine:
         task = self.store.get(task_id)
         if task is None:
             raise KeyError(task_id)
-        self._require_access("read", task.request)
+        self._require_access("read", task.effective_request)
         return task
 
     def _event(
@@ -133,9 +133,9 @@ class TaskEngine:
         if any(not fact.fact_id or not fact.source_ref for fact in snapshot.facts):
             raise ValueError("system returned facts without source references")
 
-    def refresh(self, task_id: str) -> Task:
+    def refresh(self, task_id: str, *, inputs: dict | None = None) -> Task:
         task = self.get(task_id)
-        allowed = {"collecting", "blocked", "needs_information", "needs_refresh",
+        allowed = {"collecting", "blocked", "needs_input", "needs_information", "needs_refresh",
                    "needs_policy_review", "draft_only", "review_result",
                    "needs_pre_submit_review", "ready_to_submit"}
         if task.policy.expected_system_state is None:
@@ -148,6 +148,10 @@ class TaskEngine:
         if current is None:
             raise PermissionError("workflow is unavailable in this deployment")
         task.policy = current
+        if inputs is not None:
+            task.input_override = inputs
+            self._require_access("read", task.effective_request)
+        task.required_input = ()
         task.proposal = None
         task.prepared_digest = None
         task.snapshot = None
@@ -156,7 +160,7 @@ class TaskEngine:
         return self._prepare(task)
 
     def _prepare(self, task: Task, *, auto_submit: bool = False) -> Task:
-        request = task.request
+        request = task.effective_request
         policy = task.policy
         try:
             snapshot = self.system.read_context(request.subject, request.capability_id)
@@ -181,6 +185,11 @@ class TaskEngine:
             else:
                 task.status = "needs_pre_submit_review" if policy.requires_pre_submit_review else "ready_to_submit"
             self._event(task, "prepare_proposal", task.status, (proposal.digest,))
+        except WorkflowInputRequired as error:
+            task.status = "needs_input"
+            task.required_input = error.fields
+            self._event(task, "prepare_proposal", task.status)
+            return task
         except Exception as error:
             task.status = "blocked"
             self._event(task, "prepare", "failed", (type(error).__name__,))
@@ -214,7 +223,7 @@ class TaskEngine:
         ):
             self._event(task, "clinician_authorization", "rejected")
             raise ValueError("exact clinician approval is required")
-        self._require_access("submit", task.request, approval)
+        self._require_access("submit", task.effective_request, approval)
         try:
             current = self.system.read_context(task.request.subject, task.request.capability_id)
         except Exception:
@@ -290,7 +299,7 @@ class TaskEngine:
         task = self.get(task_id)
         if task.status != "execution_uncertain" or not task.idempotency_key:
             raise ValueError("task has no uncertain submission to reconcile")
-        self._require_access("reconcile", task.request)
+        self._require_access("reconcile", task.effective_request)
         try:
             receipt = self.system.find_submission(task)
         except Exception:
@@ -326,7 +335,7 @@ class TaskEngine:
         if self.authorize is not None:
             if task.snapshot is None or not digest or digest != task.prepared_digest:
                 raise ValueError("review needs the exact result digest")
-            self._require_access("review", task.request, ClinicianApproval(
+            self._require_access("review", task.effective_request, ClinicianApproval(
                 task_id, clinician_id, digest, task.snapshot.revision,
             ))
         read_only = task.policy.expected_system_state is None

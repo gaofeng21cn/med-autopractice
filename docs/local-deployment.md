@@ -26,11 +26,11 @@ python3 scripts/map_runtime.py review --site "$map_demo_root/site" \
   --digest "$map_proposal_digest" --accept
 ```
 
-再次使用相同 `request_id` 会打开原任务。用 `refresh` 更新未提交任务的原始资料，再请医生核对新版本。`reconcile` 用于回查结果不确定的写入。批量输入是院方给定的只读请求清单，增量保存每个任务。重复同一清单会返回已建立的任务。新一轮随访可使用新的截止日期和请求 ID。
+再次使用相同 `request_id` 会打开原任务。用 `refresh` 更新未提交任务的原始资料，再请医生核对新版本。返回 `needs_input` 时，先展示已有事实和 `required_input`，医生补充后用 `refresh --inputs <JSON 文件>` 在原任务提交完整的新输入。`reconcile` 用于回查结果不确定的写入。批量输入是院方给定的只读请求清单，增量保存每个任务。重复同一清单会返回已建立的任务。新一轮随访可使用新的截止日期和请求 ID。
 
 ## 接入本院环境
 
-1. 在仓库外选择一个仅授权账号可访问、置于院方认可的加密卷上的目录。文件使用院方的留存、备份和销毁策略。`tasks.sqlite` 在该目录保存任务、草稿、授权引用和审计事件。操作输出进入获准工作区或宿主。
+1. 在仓库外选择一个仅授权账号可访问、置于院方认可的加密卷上的目录。文件使用院方的留存、备份和销毁策略。`tasks.sqlite` 在该目录保存任务、草稿、授权引用和审计事件。本地部署使用 macOS 或 Linux 上支持进程锁的文件系统，每个任务在写入及回查期间由一个进程推进。操作输出进入获准工作区或宿主。
 2. 用站点依赖模板创建 `dependencies.json`。为准备开放的能力记录适用角色、通道、证据及资格引用。用 `site_plan.py --profile <档案> <能力 ID>` 检查缺口。撤销某条依赖后会停止相关操作。部署档案的 `profile_id` 与部署的 `site_id` 一致。
 3. 由部署方审阅并安装私有 `provider.py`。它在获准的本地账号下运行，实现 `build_provider(directory)` 并返回下表中的接口。配置由可信维护者管理，连接凭据沿用医院或设备服务的授权入口。
 4. 建立 `deployment.json`，写入 `schema_version: map-local-deployment.v1`、`site_id`、`capabilities` 与 `rules`。能力映射的值为目标读回状态。只读工作流使用 JSON `null`，病历使用 `saved_draft`。依赖规则的能力需要含 `approved_ref` 的对应规则对象。示例生成器给出每项结构。站点必须按实际字段和用途逐项验收。

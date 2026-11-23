@@ -203,7 +203,7 @@
       "examples/synthetic/local_deployment.py",
       "docs/local-deployment.md"
     ],
-    "digest": "sha256:16b208b61c592dbdcf73893f4ea3f1eb2c81d3b8b46c1dd54ff9cd8cd167745f"
+    "digest": "sha256:3bb707ab1f0c02b2b38aecc530b696699fc85b12e52bf4fd06f4883de9b275c3"
   },
   "management_scope": "local_product"
 }
