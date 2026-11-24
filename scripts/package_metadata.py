@@ -8,18 +8,27 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+try:
+    from opl_framework.package_content_lock import content_digest as _framework_content_digest
+except ImportError:
+    _framework_content_digest = None
+
 
 def content_digest(root: Path, paths: list[str]) -> str:
     if not paths or len(paths) != len(set(paths)):
         raise ValueError("Package content paths must be nonempty and unique")
-    digest = hashlib.sha256()
+    resolved_root = root.resolve()
     for relative in paths:
         file = root / relative
         if Path(relative).is_absolute() or ".." in Path(relative).parts or file.is_symlink():
             raise ValueError("Package content must be ordinary relative files")
-        if not file.resolve().is_relative_to(root.resolve()):
+        if not file.resolve().is_relative_to(resolved_root):
             raise ValueError("Package content escaped its owner root")
-        for data in (relative.encode("utf-8"), file.read_bytes()):
+    if _framework_content_digest is not None:
+        return _framework_content_digest(paths, lambda relative: (root / relative).read_bytes())
+    digest = hashlib.sha256()
+    for relative in paths:
+        for data in (relative.encode("utf-8"), (root / relative).read_bytes()):
             digest.update(len(data).to_bytes(8, "big"))
             digest.update(data)
     return "sha256:" + digest.hexdigest()

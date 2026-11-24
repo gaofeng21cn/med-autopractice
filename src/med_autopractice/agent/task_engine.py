@@ -19,6 +19,18 @@ from med_autopractice.domain.task import (
 )
 from med_autopractice.medicine.ports import ClinicalKnowledge
 
+try:
+    from opl_framework.controlled_apply import (
+        append_jsonl_audit_record as _framework_append_jsonl_audit_record,
+        evaluate_pre_submit_refresh as _framework_evaluate_pre_submit_refresh,
+        make_idempotency_key as _framework_make_idempotency_key,
+        verify_approval_binding as _framework_verify_approval_binding,
+        verify_independent_readback as _framework_verify_independent_readback,
+    )
+    _FRAMEWORK_CONTROLLED_APPLY_AVAILABLE = True
+except ImportError:
+    _FRAMEWORK_CONTROLLED_APPLY_AVAILABLE = False
+
 
 class JsonlAuditSink:
     """Store metadata/refs only; callers choose an approved private location."""
@@ -27,6 +39,9 @@ class JsonlAuditSink:
         self.path = path
 
     def append(self, event: AuditEvent) -> None:
+        if _FRAMEWORK_CONTROLLED_APPLY_AVAILABLE:
+            _framework_append_jsonl_audit_record(self.path, asdict(event))
+            return
         data = json.dumps(asdict(event), ensure_ascii=False, sort_keys=True) + "\n"
         fd = os.open(self.path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         try:
@@ -216,10 +231,25 @@ class TaskEngine:
             raise ValueError("proposal changed after preparation")
         policy = task.policy
         if policy.requires_pre_submit_review and (
-            approval is None or approval.task_id != task_id
-            or not approval.clinician_id
-            or approval.proposal_digest != task.proposal.digest
-            or approval.facts_revision != task.snapshot.revision
+            approval is None
+            or not (
+                _framework_verify_approval_binding(
+                    task_id=approval.task_id,
+                    actor_id=approval.clinician_id,
+                    proposal_digest=approval.proposal_digest,
+                    facts_revision=approval.facts_revision,
+                    expected_task_id=task_id,
+                    expected_proposal_digest=task.proposal.digest,
+                    expected_facts_revision=task.snapshot.revision,
+                )
+                if _FRAMEWORK_CONTROLLED_APPLY_AVAILABLE
+                else (
+                    approval.task_id == task_id
+                    and bool(approval.clinician_id)
+                    and approval.proposal_digest == task.proposal.digest
+                    and approval.facts_revision == task.snapshot.revision
+                )
+            )
         ):
             self._event(task, "clinician_authorization", "rejected")
             raise ValueError("exact clinician approval is required")
@@ -234,22 +264,42 @@ class TaskEngine:
             raise ValueError("system refresh has no operation trace")
         self._event(task, "pre_submit_refresh", "observed", current.trace_refs)
         covered = {item.scope for item in current.coverage if item.complete}
-        if not set(policy.required_scopes) <= covered:
-            task.status = "needs_information"
-            self._event(task, "pre_submit_check", "incomplete_sources")
-            return task
-        if current.subject != task.request.subject or current.revision != task.snapshot.revision or (
-            self.authorize is not None and (
-                current.facts != task.snapshot.facts or current.coverage != task.snapshot.coverage
+        if _FRAMEWORK_CONTROLLED_APPLY_AVAILABLE:
+            verdict = _framework_evaluate_pre_submit_refresh(
+                expected_subject=task.request.subject,
+                expected_revision=task.snapshot.revision,
+                expected_facts=task.snapshot.facts,
+                expected_coverage=task.snapshot.coverage,
+                current_subject=current.subject,
+                current_revision=current.revision,
+                current_facts=current.facts,
+                current_coverage=current.coverage,
+                required_scopes=policy.required_scopes,
+                complete_scopes=covered,
+                strict_fact_equality=self.authorize is not None,
+                can_apply=lambda: self.system.can_apply(task.proposal),
             )
-        ):
-            task.status = "needs_refresh"
-            self._event(task, "pre_submit_check", "stale_facts")
-            return task
-        if not self.system.can_apply(task.proposal):
-            task.status = "draft_only"
-            self._event(task, "pre_submit_check", "write_unqualified")
-            return task
+            if not verdict.ok:
+                task.status = verdict.status
+                self._event(task, "pre_submit_check", verdict.reason or verdict.status)
+                return task
+        else:
+            if not set(policy.required_scopes) <= covered:
+                task.status = "needs_information"
+                self._event(task, "pre_submit_check", "incomplete_sources")
+                return task
+            if current.subject != task.request.subject or current.revision != task.snapshot.revision or (
+                self.authorize is not None and (
+                    current.facts != task.snapshot.facts or current.coverage != task.snapshot.coverage
+                )
+            ):
+                task.status = "needs_refresh"
+                self._event(task, "pre_submit_check", "stale_facts")
+                return task
+            if not self.system.can_apply(task.proposal):
+                task.status = "draft_only"
+                self._event(task, "pre_submit_check", "write_unqualified")
+                return task
         if approval is not None:
             self._event(
                 task, "clinician_authorization", "approved",
@@ -257,7 +307,11 @@ class TaskEngine:
             )
 
         prior_ref = task.receipt.object_ref if task.receipt else None
-        key = f"{task.request.request_id}:{task.proposal.digest}:{task.snapshot.revision}"
+        key = (
+            _framework_make_idempotency_key(task.request.request_id, task.proposal.digest, task.snapshot.revision)
+            if _FRAMEWORK_CONTROLLED_APPLY_AVAILABLE
+            else f"{task.request.request_id}:{task.proposal.digest}:{task.snapshot.revision}"
+        )
         task.idempotency_key = key
         task.status = "execution_uncertain"
         self._event(task, "system_submit", "attempted", (key,))
@@ -283,6 +337,25 @@ class TaskEngine:
 
     @staticmethod
     def _readback_matches(task: Task, receipt, readback, policy: TaskPolicy) -> bool:
+        if task.proposal is None:
+            return False
+        if _FRAMEWORK_CONTROLLED_APPLY_AVAILABLE:
+            return _framework_verify_independent_readback(
+                expected_subject=task.request.subject,
+                expected_object_ref=receipt.object_ref,
+                expected_proposal_digest=task.proposal.digest,
+                expected_payload=task.proposal.payload,
+                expected_state=policy.expected_system_state,
+                readback_subject=readback.subject,
+                readback_object_ref=readback.object_ref,
+                readback_proposal_digest=readback.proposal_digest,
+                readback_visible_payload=readback.visible_payload,
+                readback_state=readback.state,
+                readback_screenshot_ref=readback.screenshot_ref,
+                readback_resource_version_ref=readback.resource_version_ref,
+                readback_observed_at=readback.observed_at,
+                readback_trace_refs=readback.trace_refs,
+            )
         return (
             task.proposal is not None
             and readback.subject == task.request.subject
