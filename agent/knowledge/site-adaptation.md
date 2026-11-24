@@ -19,4 +19,4 @@
 
 沉淀新的经验时，把跨站点成立的信号、检查方式及处置动作写进本知识条目，用全新合成情境说明。机构信息、页面路径与真实证据留在各自的私有部署档案。
 
-[站点调研与 playbook 合同](../../docs/site-survey.md) · [运行时接入](../../docs/local-deployment.md#接入本院环境)
+[站点调研与 playbook 合同](../../docs/site-survey.md) · [运行时接入](../../docs/site-integration.md#接入本院环境)

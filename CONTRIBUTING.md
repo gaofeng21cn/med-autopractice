@@ -10,7 +10,7 @@ Med Auto Practice 是面向医生主导临床工作的开源智能体。贡献�
 - 先运行 `python3 scripts/public_release_check.py`、`python3 scripts/project_status.py --json` 和完整测试。
 - 说明改动的范围、验证命令和仍未完成的临床资格边界。
 
-首次贡献可先跑合成医嘱任务，再修改自定义提案示例或演练站点适配。按影响范围参考 [快速上手](docs/getting-started.md) 与 [二次开发](docs/adapter-development.md)。
+首次贡献可先跑合成医嘱任务，再修改自定义提案示例或演练站点适配。按影响范围参考 [快速上手](docs/getting-started.md) 与 [医院接入与二次开发](docs/hospital-adapters.md#二次开发)。
 
 ## Pull Request
 

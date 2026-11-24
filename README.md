@@ -36,6 +36,6 @@ MAP 的设计从医生交办的临床目标出发，在医院现有信息系统�
 
 ## 开始使用
 
-在 OPL 软件中心安装 **Med Auto Practice**，也可以直接添加到 Codex。公开预览版可以从已有资料开始，整理带来源的病历时间线，并把有矛盾或待补的地方单独列出来。[安装与上手](docs/getting-started.md) · [开发进展](docs/roadmap.md)
+在 OPL 软件中心安装 **Med Auto Practice**，也可以直接添加到 Codex。公开预览版可以从已有资料开始，整理带来源的病历时间线，并把有矛盾或待补的地方单独列出来。[安装与上手](docs/getting-started.md) · [开发进展](docs/roadmap.md) · [文档索引](docs/README.md)
 
-[医院部署](docs/hospital-adapters.md) · [二次开发](docs/adapter-development.md) · [贡献指南](CONTRIBUTING.md) · [Apache-2.0 许可证](LICENSE)
+[医院部署与二次开发](docs/hospital-adapters.md) · [贡献指南](CONTRIBUTING.md) · [Apache-2.0 许可证](LICENSE)

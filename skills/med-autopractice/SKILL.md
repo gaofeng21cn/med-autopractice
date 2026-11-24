@@ -28,10 +28,10 @@ description: 使用 Med Auto Practice（MAP）开始或恢复医生主导的临�
 
 按工作流绑定患者与就诊，记录事实来源、时间和覆盖范围。医学组件基于这份快照产生带版本的候选提案。医生对确切版本批准医嘱或组套变更。通过获准的部署入口提交后，重新读取目标系统的对象、状态与内容，附版本化资源证据或一手截图，交医生接受或修订。临床判断和签署由有资质的医生完成。[任务与恢复契约](../../docs/agent-contract.md)
 
-`scripts/map_runtime.py` 用 `--store` 跑合成任务，用 `--site` 选择已登记的私有部署。站点由用户或已批准的宿主配置明确选择。连接未就绪时先按医院适配 Skill 处理缺项。把医生的任务和授权引用写入获准目录里的请求，再调用 `start`。按结果展示缺失范围、事实依据及拟变更。返回 `needs_input` 时，展示已取得的事实，只问 `required_input` 所需的问题。得到医生补充后，以 `refresh --inputs <JSON 文件>` 在同一任务重新准备。医生批准具体版本后，用同一任务的摘要和事实版本提交。验收使用医生核对过的结果摘要。查询、查看进度和批量只读任务沿相同入口进行。[本地部署与请求](../../docs/local-deployment.md)站点工作流的开放状态见[能力目录](../../contracts/capabilities.json)，部署配置和操作资格见[医院适配 Skill](../map-site-adaptation/SKILL.md)。
+`scripts/map_runtime.py` 用 `--store` 跑合成任务，用 `--site` 选择已登记的私有部署。站点由用户或已批准的宿主配置明确选择。连接未就绪时先按医院适配 Skill 处理缺项。把医生的任务和授权引用写入获准目录里的请求，再调用 `start`。按结果展示缺失范围、事实依据及拟变更。返回 `needs_input` 时，展示已取得的事实，只问 `required_input` 所需的问题。得到医生补充后，以 `refresh --inputs <JSON 文件>` 在同一任务重新准备。医生批准具体版本后，用同一任务的摘要和事实版本提交。验收使用医生核对过的结果摘要。查询、查看进度和批量只读任务沿相同入口进行。[本地部署与请求](../../docs/site-integration.md#接入本院环境)站点工作流的开放状态见[能力目录](../../contracts/capabilities.json)，部署配置和操作资格见[医院适配 Skill](../map-site-adaptation/SKILL.md)。
 
 ## 按需使用知识和开发资料
 
 需要通用 Markdown 来源时使用 `scripts/map_knowledge.py --workspace <workspace> [--project <project>] sources|search|read-source`。维护知识走同一入口的 `register`、`propose`、`review`、`apply` 或 `review-source`。在启动或修订提案时显式记录 `Proposal.knowledge_refs`，复用前以 `verify-dependencies --dependencies <JSON 文件>` 核对 `knowledge_dependencies.valid`。患者记录和站点资料由其原有受控存储保管。[知识来源与部署](../../docs/site-integration.md)
 
-开发工作流、中间件或宿主适配时按需读取[架构](../../docs/architecture.md)、[业务工作流](../../docs/workflows.md)与[适配器开发指南](../../docs/adapter-development.md)。
+开发工作流、中间件或宿主适配时按需读取[架构](../../docs/architecture.md)、[业务工作流](../../docs/workflows.md)与[医院接入与二次开发](../../docs/hospital-adapters.md#二次开发)。

@@ -95,7 +95,7 @@ PYTHONPATH=src python3 scripts/structure_record.py \
 本能力对应一期「既往门诊/住院病历收集与结构化」。结构化成功不等于该工作流
 合格：还需要跨系统身份核对、查询范围与分页确认、缺失与矛盾标注，以及医生对
 产物的验收记录。界面资格与逐项开放要求见
-[KVM 界面资格规范](kvm-ui-qualification.md)和[实施顺序与验收](roadmap.md)。
+[院内系统调研与 KVM 界面资格](site-survey.md#kvm-界面资格与失败恢复)和[实施顺序与验收](roadmap.md)。
 
 ## 研究数据集
 

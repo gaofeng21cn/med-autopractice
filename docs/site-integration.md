@@ -116,3 +116,41 @@ python3 scripts/map_knowledge.py --workspace /private/workspace read-source --id
 重新使用已有知识依据前，用 `verify-dependencies --dependencies <JSON 文件>` 核对 `[{"knowledge_id":"…","sha256":"sha256:…"}]` 中的版本、有效性和访问范围。该命令的调用成功与依赖有效是两个结果：只有响应中 `knowledge_dependencies.valid` 为 `true` 才能继续依赖这些来源；`false` 时按 `issues` 重新读取和审阅，不能只检查进程退出码。此入口本身不赋予临床执行资格。
 
 来源与记忆的唯一政策见 [Framework 知识政策](https://github.com/gaofeng21cn/one-person-lab/blob/main/docs/policies/knowledge-source-and-memory-policy.md)，参数和 schema 见[知识来源接口](https://github.com/gaofeng21cn/one-person-lab/blob/main/docs/specs/knowledge-sources.md)。Framework 无可用接口、来源未授权或版本已失效时入口返回错误，不转为直接读文件，也不自动重试未知写入。读取结果可包含私有正文，只交给获授权任务上下文；患者病历、院内截图和 JSON 操作档案继续走原有受控存储。
+
+## 接入本院环境
+
+MAP 的本地入口 `scripts/map_runtime.py --site` 可装配院方的授权、事实读取、条件写入与回查（合成站点演练见[用合成站点演练](getting-started.md#用合成站点演练)）。医院保管正式病历、医嘱、接口凭据及合规证据，实际临床开放以[实施顺序与验收](roadmap.md)为准。
+
+1. 在仓库外选择一个仅授权账号可访问、置于院方认可加密卷上的目录，沿用院方留存、备份和销毁策略。`tasks.sqlite` 在该目录保存任务、草稿、授权引用和审计事件；使用支持跨平台进程锁的文件系统，每个任务在写入及回查期间由单一进程推进。
+2. 用站点依赖模板创建 `dependencies.json`，记录适用角色、通道、证据及资格引用；使用 `site_plan.py --profile <档案> <能力 ID>` 检查缺口。部署档案的 `profile_id` 与部署的 `site_id` 保持一致。
+3. 由部署方审阅并安装私有 `provider.py`（在获准本地账号下运行，实现 `build_provider(directory)`），返回下表核心接口；连接凭据沿用医院或设备服务的授权入口。
+4. 建立 `deployment.json`，写入 `schema_version: map-local-deployment.v1`、`site_id`、`capabilities` 与 `rules`（只读工作流用 `null`，病历用 `saved_draft`，依赖规则的能力绑定含 `approved_ref` 的规则对象）。
+5. 在受控宿主登记部署目录和本院授权方式：先验证只读操作，再验证病程草稿保存与回读，最后开放确切医嘱批准与写入。
+
+| 适配接口 | 部署方需要实现的行为 |
+| --- | --- |
+| `authorize(action, request, decision)` | 核对会话、任务用途、患者、就诊与授权；提交和验收核验医生批准记录并与任务 ID、内容摘要和资料版本一致。 |
+| `read_context(subject, capability_id)` | 返回绑定对象的 `Snapshot`，包含操作 trace、完整度、来源和稳定资料版本；历史资料保留分页与覆盖证据。 |
+| `can_apply(proposal)` | 核对目标、实际字段能力及当前角色是否可以提交；写入与回读两项资格齐全时才呈现可提交状态。 |
+| `apply_bound(request, proposal, revision, idempotency_key, existing_object_ref, approval)` | 在写入处检查有效批准和目标事实版本，使用目标系统条件更新或等效锁及幂等键；病历保存草稿，医嘱按确切变更授权。 |
+| `read_back(receipt, task)` 与 `find_submission(task)` | 从原系统独立读取对象和完整保存内容并附观察时间/资源版本或一手截图；仅唯一匹配时回读，否则保留待核对。 |
+
+### 业务输入和结果
+
+运行时使用 `TaskRequest.inputs` 传入本次任务资料，部署方将读取映射为带来源的 `Fact`（结构化字段放 `details`，规则引用随提案保存）：
+
+| 工作 | 运行时读取的结构与输出 |
+| --- | --- |
+| 住院、门诊病历 | 规则声明 `sections`，事实提供 `details.section`，医师补充放 `inputs.sections`，输出带出处分节草稿。 |
+| 新收、调整医嘱、出院带药、组套 | 事实提供本地目录及现行医嘱/组套条目，医生给出 `inputs.changes`，更改和停用绑定原对象。 |
+| 历史病历 | `history_collection` 事实保留采集包、就诊标识和来源，合并去重后标出身份/内容冲突并输出结构化病历。 |
+| 出院质控与文书提醒 | 使用院方 `required_documents`、`deadline_days` 与文书状态及明确 `as_of`，输出到期项与缺失事实。 |
+| 专病队列与随访 | 使用院方确认的 `include`/`exclude`/`intervals` 输出纳入、排除、待核实或到期项；对外提醒由院方接入。 |
+
+确定性工作流整理院内事实和医生说明，药物选择、剂量方案和正式签署由医生决定；扩展方法见[医院接入与二次开发](hospital-adapters.md#二次开发)。
+
+## 外部技术参考
+
+- [OpenAI Prompt Caching 指南](https://developers.openai.com/api/docs/guides/prompt-caching)：用于理解缓存输入与非缓存输入的成本口径，不替代计费页面。
+- [GL.iNet GLKVM 开源代码](https://github.com/gl-inet/glkvm)：用于理解公开设备协议与固件实现；部署端能力仍需在真实设备验收。
+- [第三方 glkvm-mcp 实现](https://github.com/kennypeh85/glkvm-mcp)：仅作接口设计比较，不是 MAP 的运行依赖或资格证据。

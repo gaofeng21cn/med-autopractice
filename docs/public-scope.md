@@ -37,4 +37,4 @@ python3 scripts/package_metadata.py
 PYTHONPATH=src python3 -m unittest discover -s tests -v
 ```
 
-发布时从干净克隆检查可达历史，并人工复核文档、合成样例与图片。自动检查覆盖常见凭据格式、内网地址、私有配置路径与未审查的二进制资源。
+`scripts/public_release_check.py` 优先委托 OPL Framework CLI 执行工作区洁净度、历史泄露和未审查二进制检查（未安装 Framework 时执行同策略本地回退检查）；已审阅的可公开二进制白名单由 `contracts/disclosure_policy.json` 的 `reviewed_binary_paths` 声明。发布时仍从干净克隆核对可达历史，并人工复核文档、合成样例与图片。

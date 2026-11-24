@@ -126,13 +126,12 @@
       "contracts/site-playbook.v2.schema.json",
       "contracts/site-survey.schema.json",
       "contracts/structured-clinical-record.schema.json",
+      "docs/README.md",
       "docs/agent-contract.md",
       "docs/architecture.md",
       "docs/clinical-record.md",
-      "docs/kvm-ui-qualification.md",
       "docs/product.md",
       "docs/research-dataset.md",
-      "docs/research.md",
       "docs/roadmap.md",
       "docs/site-integration.md",
       "docs/site-patterns/README.md",
@@ -219,7 +218,6 @@
       "NOTICE",
       "AGENTS.md",
       "assets/branding/generation-prompts.json",
-      "docs/adapter-development.md",
       "docs/getting-started.md",
       "examples/synthetic/custom_proposer.py",
       "examples/synthetic/playbooks/open-overview.json",
@@ -237,10 +235,9 @@
       "src/med_autopractice/medicine/proposals.py",
       "src/med_autopractice/workflows/results.py",
       "examples/synthetic/local_provider.py",
-      "examples/synthetic/local_deployment.py",
-      "docs/local-deployment.md"
+      "examples/synthetic/local_deployment.py"
     ],
-    "digest": "sha256:79fbb01587b9cc8fe5d1b492c473a6023a9d3fa5006818bbdcdc717345f00da8"
+    "digest": "sha256:3b765fffc38a3b1d5a6fcce0e8d62f561b646af9ec00599bde5541106333e09f"
   },
   "management_scope": "local_product"
 }

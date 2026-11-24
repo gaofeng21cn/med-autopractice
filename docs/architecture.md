@@ -41,11 +41,11 @@ OPL Framework 从标签对应的提交生成安装包清单，将公开 OCI 制�
 
 插件包含 MAP 主 Skill、医院适配 Skill、Python 代码、脚本、通用合同与相关文档。两个 Skill 都从自身插件根定位资源。显式 `MAP_SOURCE_ROOT` 可用于开发源码。院内 profile、患者资料和任务库位于包外，卸载插件只移除软件载体，原生管理器不负责删除这些业务资料。管理界面分别显示软件状态与临床能力状态。
 
-代码或合同发生变化后，维护者审阅 `content_lock.paths` 并执行 `python3 scripts/package_metadata.py --write-lock` 更新内容摘要，再运行项目检查及相关测试。消费方以 Package ID、版本、精确源内容和 native readback 判断同一安装对象。
+代码或合同发生变化后，维护者审阅 `content_lock.paths` 并执行 `python3 scripts/package_metadata.py --write-lock`（内部复用 Framework `opl_framework.package_content_lock.content_digest`，独立运行回退标准 SHA-256）更新内容摘要，再运行项目检查及相关测试。消费方以 Package ID、版本、精确源内容和 native readback 判断同一安装对象。
 
 ### 与 OPL 统一知识来源的边界
 
-MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_autopractice/knowledge.py` 的薄客户端读取 OPL Framework 公共来源接口：`sources`、`search`、`read-source`、`register` 以及 `propose`、`review`、`apply`、`review-source` 写回命令。Framework 持有来源 registry、grant、接受版本、快照和写回回执；MAP 不创建第二套 registry、索引、缓存或正文副本。使用 `scripts/map_knowledge.py` 时，调用方必须明确提供工作区、可选项目和 OPL CLI，域身份固定为 `med-autopractice`。
+MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_autopractice/knowledge.py` 的薄客户端读取 OPL Framework 公共来源接口（优先导入 `opl_framework.knowledge_client.KnowledgeClient`，未导入时降级为 `opl` CLI 子进程调用）：`sources`、`search`、`read-source`、`register` 以及 `propose`、`review`、`apply`、`review-source` 写回命令。Framework 持有来源 registry、grant、接受版本、快照和写回回执；MAP 不创建第二套 registry、索引、缓存或正文副本。使用 `scripts/map_knowledge.py` 时，调用方必须明确提供工作区、可选项目和 OPL CLI，域身份固定为 `med-autopractice`。
 
 医院系统的正式患者事实、采集包、院内制度与页面操作 JSON 仍由医院/部署 owner 管理。`Snapshot` 是带患者/就诊版本的本次任务事实，不能当作长期知识；site profile、survey 和 playbook 也继续走 MAP 的外部部署合同，不自动注册为个人知识。需要把可复用正文交给医学提案组件时，调用方先从 Framework 获取获授权来源和精确哈希，再把引用作为 `Proposal.knowledge_refs` 传入；真实临床动作仍须独立完成能力资格、医生复核和系统回读。
 
@@ -55,39 +55,31 @@ MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_
 
 ### 模块与合同归属
 
-| 唯一 owner | 当前代码或文档 | 稳定边界与当前差距 |
+以下列出当前源码主线已实现的模块 owner（后续 Phase 4 离线合规存储与运维增强见[路线图](roadmap.md)）：
+
+| 唯一 owner | 当前源码或合同 | 稳定边界 |
 |---|---|---|
 | 患者事实、提案、任务和审阅对象 | `domain/task.py` | `Snapshot` 绑定患者、就诊、来源与采集范围；`Proposal` 绑定能力、事实引用、生成者、知识引用和 `map-proposal.v1` 版本。领域对象不决定诊疗内容或 UI 坐标。 |
-| 跨平台锁与安全存储边界 | `platform/locking.py`、`platform/security.py`、`storage/` | 统一 POSIX 与 Windows 10/11 独占任务锁、私有目录校验、可选本地证据加密与留存期 TTL 清理；保持核心包零外部依赖。 |
-| 医学判断与双轨起草 | `medicine/ports.py`、`medicine/router.py`、`medicine/llm_proposer.py`、`medicine/phi_guard.py` | `ClinicalKnowledge.propose(request, snapshot)` 返回候选 `Proposal`；支持院内本地模型直连（`local_trusted`，默认兜底）与假名化脱敏云端强模型（`pseudonymize_outbound`），所有输出强制经 `medicine/proposals.py` 确定性校验。 |
-| 业务工作流与宿主入口 | `workflows/catalog.py`、`workflows/site_plan.py`、`agent/task_engine.py`、`runtime.py`、`mcp_server.py` | 一期九项及后续两项共用任务状态和部署依赖。`runtime.py` 与标准 MCP Server（`mcp_server.py`）共同作为宿主边界，支持跨进程恢复、任务列表与取消、渐进部分读取，以及 OPL App MiniApp / MCP App 复核视图（`review_ui/`）。 |
-| 系统语义与多通道驱动 | `adapters/ports.py`、`adapters/composite.py`、`adapters/playbook_runner.py`、`adapters/declarative_ui.py`、`adapters/drivers/`、`adapters/fhir.py`、`adapters/middleware_rest.py`、`adapters/hl7v2.py` | `ClinicalSystem` 规定查询、提交、回读及恢复。`CompositeClinicalSystem` 按依赖选定通道混合路由；`PlaybookRunner` 与 `DeclarativeHospitalUI` 驱动本机 `computer_use`（Windows UIA / 浏览器 CDP）与通用 `ip_kvm`（硬件无关 `KVMTransport` + 纯 HID 中文分段 OCR 校验），原生路径支持完整 FHIR R4 与声明式 REST 中间件。 |
-| 患者事实清洗与结构化病历 | `records/clinical_record.py`、`contracts/structured-clinical-record.schema.json` | 把仓库外采集包清洗为带每节来源、显式缺口和显式冲突的结构化病历；规则通用、无院方与患者内容。规则见[病历收集与结构化](clinical-record.md)。它只整理已采集内容，不做临床判断，也不写回院内系统。 |
+| 跨平台锁与安全边界 | `platform/locking.py`、`platform/security.py` | 统一 POSIX 与 Windows 独占任务锁及私有目录路径安全校验；保持核心包零外部依赖。 |
+| 医学提案端口与双轨起草 | `medicine/ports.py`、`medicine/router.py`、`medicine/proposals.py`、`medicine/llm_proposer.py`、`medicine/phi_guard.py` | `ClinicalKnowledge.propose(request, snapshot)` 返回候选 `Proposal`，支持 `local_trusted` 与 `pseudonymize_outbound` 双轨路由及 `PHIGuard` 脱敏，经 `medicine/proposals.py` 确定性校验。 |
+| 业务工作流与宿主入口 | `workflows/catalog.py`、`workflows/results.py`、`workflows/site_*.py`、`agent/task_engine.py`、`agent/task_store.py`、`runtime.py`、`deployment.py`、`mcp_server.py`、`review_ui/` | 一期及扩展工作流共用任务状态、站点录制与压测资格流水线（`site_recorder.py`、`site_qualify.py`）、SQLite 跨进程恢复、标准 MCP Server 与 `review_ui/` 临床复核视图。 |
+| 系统语义与多通道驱动 | `adapters/ports.py`、`adapters/composite.py`、`adapters/playbook_runner.py`、`adapters/declarative_ui.py`、`adapters/drivers/`、`adapters/fhir.py`、`adapters/middleware_rest.py`、`adapters/hl7v2.py`、`adapters/kvm.py`、`adapters/ui.py`、`adapters/synthetic.py` | `ClinicalSystem` 规定查询、提交、回读及恢复。`CompositeClinicalSystem` 按依赖选定通道混合路由；`PlaybookRunner` 与 `DeclarativeHospitalUI` 驱动本机 `computer_use`（`desktop_win.py` / `browser_cdp.py`）与通用 `ip_kvm`（`kvm_driver.py`、`ocr.py`、`text_entry.py`），原生支持 FHIR R4、REST 中间件与 HL7 v2，并提供 UI 模式模板 `docs/site-patterns/README.md` 与合成靶机 `examples/sandbox_his/`。 |
+| 患者事实清洗与结构化病历 | `records/clinical_record.py`、`records/research_dataset.py`、`contracts/structured-clinical-record.schema.json` | 把仓库外采集包清洗为带每节来源、显式缺口和显式冲突的结构化病历，并衍生固定列研究长表。规则见[病历收集与结构化](clinical-record.md)。它只整理已采集内容，不做临床判断，也不写回院内系统。 |
 
-## 已确认架构决策（ADR-1 至 ADR-4）
+## 目标架构决策（ADR-1 至 ADR-4）
 
-为兼顾医院隔离终端与医生电脑直接部署两类核心现场需求，MAP 锁定以下四项架构决策：
+为兼顾医院隔离终端与医生电脑直接部署两类核心现场需求，MAP 的设计遵循以下四项架构决策（各阶段落地状态与院内验收边界见[路线图](roadmap.md)）：
 
 - **ADR-1（双通道并行演进：`computer_use` 理想形态 ∥ `ip_kvm` 物理隔离兜底）**：本机直连（Windows UIA 桌面控件树 + 浏览器 CDP 附着 + 人工即时抢占）作为理想形态，硬件无关 `KVMTransport`（兼容 `glkvm-native`、PiKVM/JetKVM/NanoKVM、VNC/HID 等）作为物理隔离兜底，两者并行建设并共享同一声明式 `PlaybookRunner`、`CompositeClinicalSystem` 混合通道路由与 `TaskEngine` 受控状态机。
 - **ADR-2（IP KVM 中文长文输入三层策略）**：优先完善**策略 B（纯 HID 键码/输入法分段注入 + 局部 OCR 逐段校对）**作为第一兜底，确保零院方软件侵入；同时提供**策略 A（KVM 协议剪贴板 / 受控局域网中转页）**的可选插件能力按医院策略开启；未通过中文输入资格校验的站点自动执行**策略 C（安全降级 `draft_only`）**，绝不静默写入错字病历。
-- **ADR-3（复核交互对齐 OPL App MiniApp / MCP App 标准形态）**：不建设重型独立 HIS/Web 管理系统，而是通过标准 MCP Server（`mcp_server.py`）接入任意宿主，并围绕 **OPL App MiniApp / MCP App** 标准嵌入式形态构建轻量化临床复核卡片（病程句级溯源高亮、医嘱三栏差异、回读一手截图并排核验），在非 OPL 宿主下自动回退至仅绑定 `127.0.0.1` 的一次性 Token 本地视图，严格操作同一 `TaskRuntime` 对象。
-- **ADR-4（临床起草模型双轨并存）**：`medicine/` 层通过 `LLMClinicalProposer` 与 `PHIGuard` 同时支持**院内本地模型直连（`local_trusted`，默认兜底、零 PHI 出网）**与**本地可逆假名化脱敏后调用云端强模型（`pseudonymize_outbound`，按医院策略开启）**；两条路径产出的草案均必须通过 `medicine/proposals.py` 的确定性规则与目录校验拦截幻觉，缺项自动触发 `WorkflowInputRequired`。
-
-## 理想形态与统一运行时分层
-
-理想形态下的新院接入不再要求每家医院从零编写 `provider.py`，而是由五层协同完成：
-
-1. **交互与宿主协议层**：标准 MCP Server + Skills + OPL MiniApp / MCP App 复核视图（非 OPL 宿主提供 `127.0.0.1` loopback 回退），让医生以自然语言发起并在几十秒内完成精确版本号批准与回读验收。
-2. **受控临床内核层（跨平台 Windows / macOS / Linux）**：`TaskEngine`、`SqliteTaskStore`、跨平台锁与安全边界、`PHIGuard` 与 `LLMClinicalProposer` + 确定性校验护栏。
-3. **混合通道路由与渐进门禁层**：`CompositeClinicalSystem` 按 `dependency_id` 分发 `native_api` / `middleware` / `computer_use` / `ip_kvm`，支持在 `partial_draft_allowed` 模式下先接通部分来源输出带明确缺口的草稿，写回仍坚持全证据严格门禁。
-4. **声明式执行与双驱动层**：通道无关的 `map-site-playbook.v2`、`PlaybookRunner` 与 `DeclarativeHospitalUI`，原生承载 Track A（`WindowsUIADriver` + `BrowserCDPDriver`）与 Track B（`KVMUIDriver` + `OCREngine` + 三层中文输入策略）及生产级 `FHIRClinicalSystem` / `RestMiddlewareAdapter` / `hl7v2`。
-5. **站点工具链与合规运维层**：仓库外 `SitePack` 同步（`site_sync`）、脱敏交互录制（`site_recorder`）、自动化故障注入资格压测（`site_qualify`）、断网离线打包（`build_offline_bundle`）、静态加密与 TTL 擦除（`storage/`）以及本地量化指标观察（`site_metrics`）。
+- **ADR-3（复核交互对齐 OPL App MiniApp / MCP App 标准形态）**：不建设重型独立 HIS/Web 管理系统，而通过标准 MCP Server（`mcp_server.py`、`scripts/map_mcp.py`）接入宿主，并围绕 **OPL App MiniApp / MCP App** 标准嵌入式形态构建 `review_ui/` 临床复核卡片，在非 OPL 宿主下自动回退至仅绑定 `127.0.0.1` 的一次性 Token 本地视图，严格操作同一 `TaskRuntime` 对象。
+- **ADR-4（临床起草模型双轨并存）**：`medicine/` 层通过 `LLMClinicalProposer` 与 `PHIGuard` 同时支持**院内本地模型直连（`local_trusted`，零 PHI 出网）**与**本地可逆假名化脱敏后调用云端强模型（`pseudonymize_outbound`，按医院策略开启）**，所有输出通过 `medicine/proposals.py` 确定性规则与目录校验拦截幻觉。
 
 工作流不调用医学模型内部方法，也不修改医学提案内容；医学组件不接收键鼠客户端或医院写入权限。一个医嘱任务中，医学组件提出候选变更及依据，业务工作流确认必需资料和医生对确切版本的批准，适配器负责院内录入与可见对象回读。`TaskEngine` 是跨能力的状态编排，不等于各项临床业务流程已经完成。
 
 `Proposal.generator_ref` 标识生成实现及版本，可以是模型配置、规则或医生输入的受控引用，不包含密钥或推理原文。提案摘要覆盖该引用、知识来源、事实引用、患者/就诊、能力和正文；更换生成实现会产生新的待审版本。`payload` 当前仍是能力专属字典，具体医嘱字段和文书结构需在获得本院字典与界面后形成版本化 Schema，未完成前不得宣称可录入真实医嘱。
 
-文档职责也各有 owner：本页定义模块及状态归属；[调用契约](agent-contract.md)定义任务输入、输出和审批/回读语义；[工作流](workflows.md)定义各临床任务的输入与产物；[能力目录](../contracts/capabilities.json)唯一记录是否可调用；[路线图](roadmap.md)记录实施顺序与验收条件；[调研记录](research.md)按日期记录现场证据。其他页面只引用，不重新定义这些事实。
+文档职责也各有 owner（完整导航见[文档索引](README.md)）：本页定义模块及状态归属；[调用契约](agent-contract.md)定义任务输入、输出和审批/回读语义；[工作流](workflows.md)定义各临床任务的输入与产物；[能力目录](../contracts/capabilities.json)唯一记录是否可调用；[路线图](roadmap.md)记录实施顺序与验收条件。其他页面只引用，不重新定义这些事实。
 
 [部署档案规范](site-integration.md)说明通用合同与本地私有 profile 的边界；`contracts/site-dependencies.json` 仅含不绑定任何医院的默认依赖，实际部署通过 `MAP_SITE_PROFILE` 从仓库外加载。`unmapped`、`observed`、`qualified` 的状态只描述适配证据，`observed` 不满足任务执行资格；即使某 profile 的依赖变为 `qualified`，仍须单独按能力目录完成权限、存储、医生验收和临床开放。依赖计划只读，不调用设备或医学模型。
 
@@ -105,7 +97,7 @@ MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_
 
 ## 两个仓库怎样组织
 
-设备控制继续由独立的 `glkvm-native` 项目负责。Med Auto Practice（MAP）维护临床任务语义、通用适配合同和合成验证，不把任何部署工作区路径写入源码。
+设备控制继续由独立的 `glkvm-native` 项目负责；`scripts/kvm_status.py` 优先通过 `opl packages locate glkvm-native --json` 定位已安装设备包，再回退 `$CODEX_HOME/glkvm-native/installation.json`。Med Auto Practice（MAP）维护临床任务语义、通用适配合同和合成验证，不把任何部署工作区路径写入源码。
 
 项目入口与运行示例见 [README](../README.md)。Codex 提供对话与复核界面。
 

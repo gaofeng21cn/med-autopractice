@@ -18,11 +18,15 @@
       "body_ref": {
         "kind": "repo_path",
         "ref": "agent/knowledge/site-adaptation.md",
-        "sha256": "sha256:a32b3bc343ab4182e872c80843d80ce2743af956296773f857719e96ba2260cc"
+        "sha256": "sha256:feed73031ea9eca71317816c395a1a5328b78abf876efc22cb3ba64e55d216c3"
       },
       "applicability": {
-        "domains": ["med-autopractice"],
-        "stages": ["site-adaptation"]
+        "domains": [
+          "med-autopractice"
+        ],
+        "stages": [
+          "site-adaptation"
+        ]
       },
       "status": "active",
       "reviewed_at": "2026-11-23T00:00:00+08:00",
@@ -49,8 +53,12 @@
         "sha256": "sha256:43f042a7e0fb9a04d4547bdeed3b6197fb0830f77b7f0ded487223b90885b442"
       },
       "applicability": {
-        "domains": ["med-autopractice"],
-        "stages": ["record-review"]
+        "domains": [
+          "med-autopractice"
+        ],
+        "stages": [
+          "record-review"
+        ]
       },
       "status": "active",
       "reviewed_at": "2026-11-23T00:00:00+08:00",

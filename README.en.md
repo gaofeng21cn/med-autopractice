@@ -36,6 +36,6 @@ Disease cohorts and follow-up are planned around the same way of working.
 
 ## Get started
 
-Install **Med Auto Practice** from the OPL Software Center, or add it directly to Codex. In the public preview, start with records you already have. Ask MAP for a timeline with sources, inconsistencies, and missing information. [Installation guide](docs/getting-started.md) · [Development progress](docs/roadmap.md)
+Install **Med Auto Practice** from the OPL Software Center, or add it directly to Codex. In the public preview, start with records you already have. Ask MAP for a timeline with sources, inconsistencies, and missing information. [Installation guide](docs/getting-started.md) · [Development progress](docs/roadmap.md) · [Documentation index](docs/README.md)
 
-[Hospital setup](docs/hospital-adapters.md) · [Developer guide](docs/adapter-development.md) · [Contributing](CONTRIBUTING.md) · [Apache-2.0 license](LICENSE)
+[Hospital setup & development](docs/hospital-adapters.md) · [Contributing](CONTRIBUTING.md) · [Apache-2.0 license](LICENSE)

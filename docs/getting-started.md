@@ -4,7 +4,7 @@
 
 ## 在 Codex 中加载 MAP
 
-使用支持 `codex plugin marketplace add` 和 `codex plugin add` 的 Codex CLI。以下命令以 Codex CLI 0.170.0 验证。
+使用支持 `codex plugin marketplace add` 和 `codex plugin add` 的 Codex CLI。
 
 ```sh
 codex plugin marketplace add https://github.com/gaofeng21cn/med-autopractice.git --ref main
@@ -62,12 +62,38 @@ python3 scripts/map_runtime.py show --store "$map_run_dir/tasks.sqlite" \
 
 每份新任务使用独立的 `request_id`。`reconcile` 用于回查提交结果不确定的任务。各状态及证据要求见 [Agent 调用契约](agent-contract.md)。
 
+## 用合成站点演练
+
+在 MAP 内容根运行以下命令，可在临时目录建立合成站点、请求、任务库及模拟目标系统（对应[接入本院环境](site-integration.md#接入本院环境)的同一 `map_runtime.py --site` 入口）：
+
+```sh
+map_demo_root=$(mktemp -d)
+python3 examples/synthetic/local_deployment.py "$map_demo_root/site"
+python3 scripts/map_runtime.py start --site "$map_demo_root/site" \
+  --request "$map_demo_root/site/write_inpatient_notes.json"
+python3 scripts/map_runtime.py batch --site "$map_demo_root/site" \
+  --requests "$map_demo_root/site/batch.json"
+```
+
+单项请求返回任务 ID、资料版本、提案摘要与下一动作，只读结果进入 `review_result`。拟写入内容需先由医生按摘要与资料版本批准，再从目标对象独立回读；将上步输出的三个变量值替换后可演练批准与验收：
+
+```sh
+python3 scripts/map_runtime.py submit --site "$map_demo_root/site" \
+  --task-id "$map_task_id" --clinician demo-clinician \
+  --digest "$map_proposal_digest" --revision "$map_facts_revision"
+python3 scripts/map_runtime.py review --site "$map_demo_root/site" \
+  --task-id "$map_task_id" --clinician demo-clinician \
+  --digest "$map_proposal_digest" --accept
+```
+
+再次使用相同 `request_id` 会打开原任务；`refresh` 用于更新未提交任务的原始资料，`needs_input` 返回缺失提示后通过 `refresh --inputs <JSON 文件>` 补充；`reconcile` 用于回查结果不确定的写入。
+
 ## 按任务继续
 
 | 目标 | 入口 |
 | --- | --- |
 | 用合成采集包生成结构化病历和研究长表 | [病历结构化示例](../tests/fixtures/README.md) |
-| 学习如何配置部署依赖、站点调查和操作档案 | [部署档案演练](site-integration.md#运行合成部署示例) |
-| 替换提案生成器或实现系统适配器 | [二次开发](adapter-development.md) |
+| 配置部署依赖、站点调研与本院接入 | [部署档案与运行接入](site-integration.md#接入本院环境) |
+| 替换提案生成器或实现系统适配器 | [医院接入与二次开发](hospital-adapters.md#二次开发) |
 
-[本地部署演练](local-deployment.md)使用与站点相同的入口，支持一期工作流和后续队列、随访。真实临床执行由各站点完成适配、授权和逐项资格验证。
+真实临床执行仍须由各站点完成适配、授权和逐项资格验证，见[实施顺序与验收](roadmap.md)。
