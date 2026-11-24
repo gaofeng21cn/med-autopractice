@@ -1,0 +1,64 @@
+{
+  "schema_version": "map-site-playbook.v2",
+  "playbook_id": "pattern-legacy-web-portal",
+  "site_id": "template-synthetic",
+  "title": "老旧多框架 Web 门户（含 iframe）采集与录入模板",
+  "purpose": "适配包含嵌套 iframe 的传统 Web 住院系统，完成等待加载、身份核对与草稿写入",
+  "systems": ["inpatient_his_legacy_web"],
+  "steps": [
+    {
+      "id": "wait_frame_loaded",
+      "intent": "等待电子病历主框架渲染完成",
+      "primitive": "wait_state",
+      "expect_text": "病程记录",
+      "effect": "read_only",
+      "on_failure": "reobserve",
+      "state": "unverified"
+    },
+    {
+      "id": "verify_header_subject",
+      "intent": "校验页面头部患者和就诊唯一标识",
+      "primitive": "verify_subject",
+      "expect_text": "患者",
+      "effect": "read_only",
+      "on_failure": "stop",
+      "state": "unverified"
+    },
+    {
+      "id": "collect_iframe_labs",
+      "intent": "读取 iframe 内检验表格",
+      "primitive": "scroll_collect",
+      "selector": "table#labResultGrid",
+      "extract_key": "results",
+      "scope": "results",
+      "max_pages": 5,
+      "expect_text": "检验",
+      "effect": "read_only",
+      "on_failure": "stop",
+      "state": "unverified"
+    },
+    {
+      "id": "fill_editor_iframe",
+      "intent": "填入中文病程正文草稿",
+      "primitive": "input_text",
+      "selector": "textarea[name='progress_body']",
+      "text_param": "draft_text",
+      "expect_text": "*",
+      "effect": "draft_write",
+      "on_failure": "stop",
+      "state": "unverified"
+    },
+    {
+      "id": "readback_editor_text",
+      "intent": "独立回读编辑框核验内容一致并截图",
+      "primitive": "read_text",
+      "selector": "textarea[name='progress_body']",
+      "extract_key": "draft_text",
+      "expect_text": "*",
+      "effect": "read_only",
+      "on_failure": "stop",
+      "evidence": "screenshot_ref",
+      "state": "unverified"
+    }
+  ]
+}

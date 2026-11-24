@@ -135,8 +135,13 @@
       "docs/research.md",
       "docs/roadmap.md",
       "docs/site-integration.md",
+      "docs/site-patterns/README.md",
       "docs/site-survey.md",
       "docs/workflows.md",
+      "examples/patterns/legacy_web_portal_playbook.json",
+      "examples/patterns/modern_spa_his_playbook.json",
+      "examples/patterns/win32_cs_playbook.json",
+      "examples/patterns/wpf_workstation_playbook.json",
       "plugin.json",
       "pyproject.toml",
       "rules/README.md",
@@ -148,6 +153,8 @@
       "scripts/project_status.py",
       "scripts/site_plan.py",
       "scripts/site_playbook.py",
+      "scripts/site_qualify.py",
+      "scripts/site_recorder.py",
       "scripts/site_survey.py",
       "scripts/site_sync.py",
       "scripts/structure_record.py",
@@ -166,6 +173,8 @@
       "src/med_autopractice/adapters/drivers/ocr.py",
       "src/med_autopractice/adapters/drivers/text_entry.py",
       "src/med_autopractice/adapters/kvm.py",
+      "src/med_autopractice/adapters/hl7v2.py",
+      "src/med_autopractice/adapters/middleware_rest.py",
       "src/med_autopractice/adapters/playbook_runner.py",
       "src/med_autopractice/adapters/ports.py",
       "src/med_autopractice/adapters/synthetic.py",
@@ -196,6 +205,8 @@
       "src/med_autopractice/workflows/catalog.py",
       "src/med_autopractice/workflows/site_plan.py",
       "src/med_autopractice/workflows/site_playbook.py",
+      "src/med_autopractice/workflows/site_qualify.py",
+      "src/med_autopractice/workflows/site_recorder.py",
       "src/med_autopractice/workflows/site_survey.py",
       "src/med_autopractice/workflows/site_sync.py",
       ".github/workflows/ci.yml",
@@ -229,7 +240,7 @@
       "examples/synthetic/local_deployment.py",
       "docs/local-deployment.md"
     ],
-    "digest": "sha256:06bc2e3c7c3917a401e1ea5c847fcf5f71664ce4a44836b0e8da950d401edbba"
+    "digest": "sha256:bdd02c35f8fa31386040cdecf3a5100c278149b5c6b6d5091014e98f751608d9"
   },
   "management_scope": "local_product"
 }

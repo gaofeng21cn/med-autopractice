@@ -1,0 +1,55 @@
+{
+  "schema_version": "map-site-playbook.v2",
+  "playbook_id": "pattern-wpf-workstation-note",
+  "site_id": "template-synthetic",
+  "title": "WPF / .NET 住院医生站自动化采集与草稿录入模板",
+  "purpose": "使用稳定 AutomationId 驱动 WPF DataGrid 滚动采集及文书编辑器草稿保存",
+  "systems": ["inpatient_his_wpf"],
+  "steps": [
+    {
+      "id": "verify_banner_patient",
+      "intent": "核对 WPF 顶部患者横幅与当前就诊绑定一致",
+      "primitive": "verify_subject",
+      "expect_text": "住院医生工作台",
+      "effect": "read_only",
+      "on_failure": "stop",
+      "state": "unverified"
+    },
+    {
+      "id": "collect_orders_grid",
+      "intent": "读取 WPF 在用医嘱 DataGrid 列表",
+      "primitive": "scroll_collect",
+      "selector": "AutomationId:OrdersDataGrid",
+      "extract_key": "current_orders",
+      "scope": "current_orders",
+      "max_pages": 6,
+      "expect_text": "长期医嘱",
+      "effect": "read_only",
+      "on_failure": "stop",
+      "state": "unverified"
+    },
+    {
+      "id": "enter_note_body",
+      "intent": "填充病程编辑器草稿文本",
+      "primitive": "input_text",
+      "selector": "AutomationId:ProgressNoteRichBox",
+      "text_param": "draft_text",
+      "expect_text": "*",
+      "effect": "draft_write",
+      "on_failure": "handoff",
+      "state": "unverified"
+    },
+    {
+      "id": "click_save_draft",
+      "intent": "触发草稿保存并保留一手截图",
+      "primitive": "click",
+      "selector": "AutomationId:BtnSaveDraft",
+      "target": "保存草稿",
+      "expect_text": "草稿已存",
+      "effect": "draft_write",
+      "on_failure": "stop",
+      "evidence": "screenshot_ref",
+      "state": "unverified"
+    }
+  ]
+}

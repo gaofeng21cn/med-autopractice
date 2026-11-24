@@ -1,0 +1,54 @@
+{
+  "schema_version": "map-site-playbook.v2",
+  "playbook_id": "pattern-modern-spa-his",
+  "site_id": "template-synthetic",
+  "title": "现代 SPA 前后端分离 Web HIS 病程工作流模板",
+  "purpose": "适配 React/Vue SPA 医生站，结合 DOM 操作与只读 XHR 网络旁路印证",
+  "systems": ["inpatient_his_spa"],
+  "steps": [
+    {
+      "id": "verify_spa_subject",
+      "intent": "核对 SPA 患者卡片与当前就诊编号",
+      "primitive": "verify_subject",
+      "expect_text": "就诊",
+      "effect": "read_only",
+      "on_failure": "stop",
+      "state": "unverified"
+    },
+    {
+      "id": "collect_spa_labs",
+      "intent": "采集 SPA 检验报告表",
+      "primitive": "scroll_collect",
+      "selector": "[data-testid='lab-table']",
+      "extract_key": "results",
+      "scope": "results",
+      "max_pages": 8,
+      "expect_text": "检验",
+      "effect": "read_only",
+      "on_failure": "stop",
+      "state": "unverified"
+    },
+    {
+      "id": "fill_spa_note",
+      "intent": "向富文本编辑器输入中文病程草稿",
+      "primitive": "input_text",
+      "selector": "[data-testid='note-editor']",
+      "text_param": "draft_text",
+      "expect_text": "*",
+      "effect": "draft_write",
+      "on_failure": "stop",
+      "state": "unverified"
+    },
+    {
+      "id": "click_spa_save",
+      "intent": "点击暂存草稿按钮",
+      "primitive": "click",
+      "selector": "[data-testid='btn-save-draft']",
+      "expect_text": "已保存",
+      "effect": "draft_write",
+      "on_failure": "stop",
+      "evidence": "screenshot_ref",
+      "state": "unverified"
+    }
+  ]
+}

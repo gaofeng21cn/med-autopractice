@@ -1,0 +1,68 @@
+{
+  "schema_version": "map-site-playbook.v2",
+  "playbook_id": "pattern-win32-cs-note",
+  "site_id": "template-synthetic",
+  "title": "经典 Win32 C/S 住院工作站病程起草模板",
+  "purpose": "用于 Win32 桌面端 UIA 或 IP KVM OCR 采集检验结果并录入中文病程草稿",
+  "systems": ["inpatient_his_win32"],
+  "steps": [
+    {
+      "id": "dismiss_startup_notice",
+      "intent": "关闭患者切换后的阻断提示弹窗",
+      "primitive": "handle_dialog",
+      "dialog_rules": [{"trigger_text": "提醒", "action": "dismiss", "target": "确定"}],
+      "expect_text": "住院医生工作站",
+      "effect": "read_only",
+      "on_failure": "stop",
+      "state": "unverified"
+    },
+    {
+      "id": "verify_active_subject",
+      "intent": "核对顶部状态栏唯一患者与本次住院号",
+      "primitive": "verify_subject",
+      "expect_text": "住院号",
+      "effect": "read_only",
+      "on_failure": "stop",
+      "state": "unverified"
+    },
+    {
+      "id": "collect_lab_grid",
+      "intent": "分页读取检验指标网格",
+      "primitive": "scroll_collect",
+      "selector": "SysListView32#LabGrid",
+      "target": "检验列表",
+      "extract_key": "results",
+      "scope": "results",
+      "max_pages": 5,
+      "expect_text": "检验",
+      "effect": "read_only",
+      "on_failure": "stop",
+      "state": "unverified"
+    },
+    {
+      "id": "input_progress_draft",
+      "intent": "向 RichEdit 文书区注入中文病程草稿",
+      "primitive": "input_text",
+      "selector": "RichEdit20W#NoteEditor",
+      "target": "病程正文编辑区",
+      "region_hint": [40, 160, 800, 560],
+      "text_param": "draft_text",
+      "expect_text": "*",
+      "effect": "draft_write",
+      "on_failure": "handoff",
+      "state": "unverified"
+    },
+    {
+      "id": "save_note_draft",
+      "intent": "点击暂存/保存草稿（绝不直接签章终审）",
+      "primitive": "click",
+      "selector": "Button#SaveDraft",
+      "target": "保存草稿",
+      "expect_text": "已保存",
+      "effect": "draft_write",
+      "on_failure": "stop",
+      "evidence": "screenshot_ref",
+      "state": "unverified"
+    }
+  ]
+}
