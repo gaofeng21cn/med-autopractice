@@ -14,7 +14,7 @@ def read_json(relative):
     path = (ROOT / relative).resolve()
     if not path.is_relative_to(ROOT):
         raise ValueError('元数据引用超出项目目录')
-    return json.loads(path.read_text())
+    return json.loads(path.read_text(encoding='utf-8'))
 
 
 def inspect_project():

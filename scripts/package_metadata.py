@@ -35,11 +35,11 @@ def content_digest(root: Path, paths: list[str]) -> str:
 
 
 def verify_package(root: Path = ROOT) -> dict:
-    package = json.loads((root / "opl-package.json").read_text())
-    agent = json.loads((root / "agent/manifest.json").read_text())
-    plugin = json.loads((root / ".codex-plugin/plugin.json").read_text())
-    standard_plugin = json.loads((root / "plugin.json").read_text())
-    marketplace = json.loads((root / ".agents/plugins/marketplace.json").read_text())
+    package = json.loads((root / "opl-package.json").read_text(encoding="utf-8"))
+    agent = json.loads((root / "agent/manifest.json").read_text(encoding="utf-8"))
+    plugin = json.loads((root / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
+    standard_plugin = json.loads((root / "plugin.json").read_text(encoding="utf-8"))
+    marketplace = json.loads((root / ".agents/plugins/marketplace.json").read_text(encoding="utf-8"))
     if package["package_id"] != agent["agent_id"] or plugin["name"] != package["package_id"]:
         raise ValueError("Package and plugin identities differ")
     if not package["version"] == agent["version"] == plugin["version"]:
@@ -68,9 +68,9 @@ def main() -> int:
     args = parser.parse_args()
     if args.write_lock:
         file = ROOT / "opl-package.json"
-        package = json.loads(file.read_text())
+        package = json.loads(file.read_text(encoding="utf-8"))
         package["content_lock"]["digest"] = content_digest(ROOT, package["content_lock"]["paths"])
-        file.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n")
+        file.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(verify_package(), ensure_ascii=False, indent=2))
     return 0
 

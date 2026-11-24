@@ -1,6 +1,7 @@
 """Run the explicit site entry in fresh processes against a synthetic connector."""
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 import json
 from pathlib import Path
 import sqlite3
@@ -41,7 +42,7 @@ class SiteRuntimeTests(unittest.TestCase):
         )
 
     def written_count(self):
-        with sqlite3.connect(self.site / "demo-target.sqlite") as db:
+        with closing(sqlite3.connect(self.site / "demo-target.sqlite")) as db:
             return db.execute("SELECT count(*) FROM written").fetchone()[0]
 
     def test_every_workflow_through_public_entry_and_exact_review(self):
@@ -125,7 +126,7 @@ class SiteRuntimeTests(unittest.TestCase):
 
     def test_readback_change_after_submission_requires_reconciliation(self):
         task = self.submit(self.start("write_inpatient_notes"))
-        with sqlite3.connect(self.site / "demo-target.sqlite") as db:
+        with closing(sqlite3.connect(self.site / "demo-target.sqlite")) as db, db:
             db.execute("UPDATE written SET payload = ?", ('{"type": "different"}',))
         result = self.cli("review", "--task-id", task["task_id"], "--clinician", "demo-clinician",
                           "--accept", "--digest", task["proposal"]["digest"])
