@@ -9,7 +9,7 @@ description: MAP 的医院系统适配技能。首次使用 MAP、需要从院�
 
 ## 先看已有条件
 
-1. 执行 `python3 scripts/site_plan.py --inspect`。若已知是单项操作，直接加 `--dependency read_lab_results` 等依赖 ID；若要规划整份病程或一批医嘱，直接加工作流 ID `write_inpatient_notes` 或 `revise_orders`。显式给出的档案用 `--profile <文件>`，否则由工具读取宿主的 `MAP_SITE_PROFILE`。输出区分通用模板和外部档案。路径失效时修正所选档案，保留原配置。
+1. 优先调用 MCP 工具 `map_site_status`（若宿主未挂载 MCP 则执行 `python3 scripts/site_plan.py --inspect`）。若已知是单项操作，直接加 `--dependency read_lab_results` 等依赖 ID；若要规划整份病程或一批医嘱，直接加工作流 ID `write_inpatient_notes` 或 `revise_orders`。显式给出的档案用 `--profile <文件>`，否则由工具读取宿主的 `MAP_SITE_PROFILE`。输出区分通用模板和外部档案。路径失效时修正所选档案，保留原配置。
 2. 有档案就沿用它。只看本次操作的通道、证据引用和资格范围，核对当前角色、系统版本及授权是否仍适用。接口、证据或可访问的测试连接已经给出时，直接推进那一步。只有模板时先看用户是否已给过本院档案或可用入口。用户给了仓库外的部署位置且需要建立档案时，执行 `python3 scripts/site_plan.py --init-profile <新文件>`，随后用 `--profile` 重新读取。同一部署以后可由宿主设置 `MAP_SITE_PROFILE` 复用。公开示例的档案名为 `demo-mixed-transports`，证据使用 `demo://` 引用。遇到演练档案先辨认本次任务范围，现场验证应使用本院选定的档案与证据。
 3. 目标或连接仍缺失时，只问一个决定下一步的问题。只说“启动”可问“你想先整理手头的病历，还是从本院系统取一项资料？”已明确想取检验结果且已有中间件，就只确认还缺的测试连接或测试对象。不要让医生填写整院调查表、提供密码或代跑你能执行的命令。
 

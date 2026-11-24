@@ -142,6 +142,7 @@
       "rules/README.md",
       "scripts/kvm_status.py",
       "scripts/map_knowledge.py",
+      "scripts/map_mcp.py",
       "scripts/map_runtime.py",
       "scripts/package_metadata.py",
       "scripts/project_status.py",
@@ -174,15 +175,22 @@
       "src/med_autopractice/domain/__init__.py",
       "src/med_autopractice/domain/task.py",
       "src/med_autopractice/knowledge.py",
+      "src/med_autopractice/mcp_server.py",
+      "src/med_autopractice/medicine/__init__.py",
+      "src/med_autopractice/medicine/llm_proposer.py",
+      "src/med_autopractice/medicine/phi_guard.py",
+      "src/med_autopractice/medicine/ports.py",
+      "src/med_autopractice/medicine/router.py",
       "src/med_autopractice/platform/__init__.py",
       "src/med_autopractice/platform/locking.py",
       "src/med_autopractice/platform/security.py",
-      "src/med_autopractice/medicine/__init__.py",
-      "src/med_autopractice/medicine/ports.py",
-      "src/med_autopractice/medicine/router.py",
       "src/med_autopractice/records/__init__.py",
       "src/med_autopractice/records/clinical_record.py",
       "src/med_autopractice/records/research_dataset.py",
+      "src/med_autopractice/review_ui/__init__.py",
+      "src/med_autopractice/review_ui/assets/review_app.html",
+      "src/med_autopractice/review_ui/renderer.py",
+      "src/med_autopractice/review_ui/server.py",
       "src/med_autopractice/runtime.py",
       "src/med_autopractice/workflows/__init__.py",
       "src/med_autopractice/workflows/catalog.py",
@@ -221,7 +229,7 @@
       "examples/synthetic/local_deployment.py",
       "docs/local-deployment.md"
     ],
-    "digest": "sha256:901a776c86aa8010380ebe531e1bc0845e1da84c5211e7e2dc00ad938248c567"
+    "digest": "sha256:06bc2e3c7c3917a401e1ea5c847fcf5f71664ce4a44836b0e8da950d401edbba"
   },
   "management_scope": "local_product"
 }

@@ -9,6 +9,8 @@ description: 使用 Med Auto Practice（MAP）开始或恢复医生主导的临�
 
 ## 开始或继续任务
 
+当宿主支持 MCP / OPL MiniApp 时，优先通过 `scripts/map_mcp.py` 提供的原生工具（`map_site_status`、`map_structure_record`、`map_start_task`、`map_list_tasks`、`map_show_task`、`map_revise_task`、`map_submit_task`、`map_review_task`、`map_reconcile_task`、`map_cancel_task`）操作同一个 `TaskRuntime`，并用 `ui://med-autopractice/review-card` 审阅卡向医生呈现提案摘要、依据溯源、回读与截图证据；不支持 MCP 的宿主沿用下述 CLI 入口。
+
 按用户已经给出的目标选择入口，能做的步骤由你执行。
 
 - **已有任务、草稿或待审医嘱。** 先从原任务存储读回任务和当前版本，呈现待审差异、依据与下一步。公开合成任务用原 `--store`、`--task-id` 调用 `scripts/map_runtime.py show`。已登记的站点使用同一命令并传 `--site <已批准的部署目录>`。结果不确定时先查找原提交并独立回读。仅在缺失原任务位置或对象有歧义时请医生定位。
