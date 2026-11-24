@@ -106,3 +106,15 @@ playbook 工具验收：外部 playbook 目录能被加载并展开为有序步�
 | 5. 现场交付 | 按已获准的接口或界面逐项建立部署档案、权限映射、读写证据和回滚安排。 | 对外包运行合成复验。真实环境从单次就诊、只读检查开始，批准确切写入并独立回读后由医生验收。 |
 
 部署前选定院方认可的加密存储、备份、留存及访问策略。测试材料全部使用合成样例，站点档案和患者数据保存在仓库外。
+
+## 理想形态五阶段工程演进计划（Phase 0–Phase 4）
+
+为将 MAP 从原型骨架推进到“本机电脑直连（理想形态）∥ 通用 IP KVM（纯 HID 兜底）并行落地、免手写 `provider.py` 可复制交付”的生产级架构，工程落地按五个独立可验收阶段递进推进：
+
+| 阶段 | 核心目标 | 关键交付与架构对齐 | 验收标准 |
+| --- | --- | --- | --- |
+| **Phase 0：跨平台与多通道内核加固** | 扫清 Windows 部署阻断，建立操作级混合通道路由与渐进可用底座 | 跨平台锁与私有边界 `platform/`；混合路由器 `CompositeClinicalSystem`；`read_mode: "partial_draft_allowed"` 部分可读降级（写回仍严格门禁）；`list` / `cancel` 任务管理与 CI 多平台矩阵 | Windows / macOS / Linux 全量测试通过；验证“接口+UI 混合路由”、错患者拦截与缺项降级生成 `draft_only` 草稿 |
+| **Phase 1：声明式引擎 + 并行双驱动** | 消除新院手写整套 `provider.py` 门槛，并行打通本机直连与通用 KVM | 通道无关 `site-playbook.v2` 与 `site_sync`；`PlaybookRunner` + `DeclarativeHospitalUI`；**Track A** `WindowsUIADriver`（控件树/原子剪贴板/人工抢占）与 `BrowserCDPDriver`；**Track B** 硬件无关 `KVMTransport` 插件 + 优先策略 B（纯 HID 分段+局部 OCR 校对）中文输入与策略 A/C；开源合成靶机 `examples/sandbox_his/` | 零手写 `provider.py` 下，仅凭声明式 Playbook 在靶机同时跑通 Windows UIA、浏览器 CDP 与 IP KVM（纯 HID 中文分段+OCR 校对）全链路 |
+| **Phase 2：MCP 协议 + 双轨起草 + OPL MiniApp 复核** | 打通自然语言委托到医生直观审阅批准验收的临床交互闭环 | 纯标准库 MCP Server（stdio + loopback HTTP）与 Skills 对齐；`PHIGuard`（`local_trusted` 本地兜底 + `pseudonymize_outbound` 脱敏云端可选）+ `LLMClinicalProposer` + 确定性幻觉拦截；OPL MiniApp / MCP App 复核卡片与 loopback 回退 | 多宿主零手写 JSON 跑通全流程；幻觉注入拦截率 100%，外发报文 0 明文 PHI 泄露；复核视图支持一键绑定摘要批准与并排截图核验 |
+| **Phase 3：半自动适配工具链与原生接口扩展** | 将新院适配周期压缩至天级，并提供向原生医院接口平滑迁移快车道 | 脱敏交互录制器 `site_recorder`；自动化 5 项压测资格套件 `site_qualify`；完整 `FHIRClinicalSystem`（全临床资源搜索/分页/ETag 条件写回）、声明式 `RestMiddlewareAdapter` 与 `hl7v2` 解析；四类通用界面模式库 | 未参与内核开发的工程师在 4 小时内用录制+压测跑通模拟 HIS；Mock FHIR / ESB 全资源读写与冲突对账通过 |
+| **Phase 4：离线合规交付与安全运维** | 满足医院断网环境与信息科安全准入要求 | 断网离线打包器 `build_offline_bundle`；本地证据静态加密与 TTL 自动擦除 `storage/`；锁屏/换班角色漂移/CA 弹框韧性 `session_guard`；离线运行指标 `site_metrics` | 断网 Windows 环境 5 分钟内安装自检；加密、留存擦除与双模式试点验收流程闭环 |

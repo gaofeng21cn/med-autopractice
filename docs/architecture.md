@@ -58,10 +58,30 @@ MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_
 | 唯一 owner | 当前代码或文档 | 稳定边界与当前差距 |
 |---|---|---|
 | 患者事实、提案、任务和审阅对象 | `domain/task.py` | `Snapshot` 绑定患者、就诊、来源与采集范围；`Proposal` 绑定能力、事实引用、生成者、知识引用和 `map-proposal.v1` 版本。领域对象不决定诊疗内容或 UI 坐标。 |
-| 医学判断 | `medicine/ports.py`、`medicine/router.py` | `ClinicalKnowledge.propose(request, snapshot)` 返回候选 `Proposal`；按能力路由到不同实现。本地工作流串联院内事实、批准的规则和医生提供的判断，生成带来源的草稿或候选变更。站点可另行部署经其验证的医学模型或知识来源。 |
-| 业务工作流 | `workflows/catalog.py`、`workflows/site_plan.py`、`agent/task_engine.py`、`runtime.py` | 一期九项及后续两项共用任务状态和部署依赖。`runtime.py` 是宿主唯一入口，负责装配 policy、投影任务视图与转达复核决定；通过显式站点运行时装配授权服务和适配器，实际开放由本院验收。 |
-| 系统语义与接入 | `adapters/ports.py`、`adapters/fhir.py`、`adapters/ui.py`、`adapters/kvm.py` | `ClinicalSystem` 规定查询、提交、回读及恢复。FHIR 组件读取单项定量结果，Computer Use 与 KVM 共用界面检查，具体部署维护自己的操作实现。 |
+| 跨平台锁与安全存储边界 | `platform/locking.py`、`platform/security.py`、`storage/` | 统一 POSIX 与 Windows 10/11 独占任务锁、私有目录校验、可选本地证据加密与留存期 TTL 清理；保持核心包零外部依赖。 |
+| 医学判断与双轨起草 | `medicine/ports.py`、`medicine/router.py`、`medicine/llm_proposer.py`、`medicine/phi_guard.py` | `ClinicalKnowledge.propose(request, snapshot)` 返回候选 `Proposal`；支持院内本地模型直连（`local_trusted`，默认兜底）与假名化脱敏云端强模型（`pseudonymize_outbound`），所有输出强制经 `medicine/proposals.py` 确定性校验。 |
+| 业务工作流与宿主入口 | `workflows/catalog.py`、`workflows/site_plan.py`、`agent/task_engine.py`、`runtime.py`、`mcp_server.py` | 一期九项及后续两项共用任务状态和部署依赖。`runtime.py` 与标准 MCP Server（`mcp_server.py`）共同作为宿主边界，支持跨进程恢复、任务列表与取消、渐进部分读取，以及 OPL App MiniApp / MCP App 复核视图（`review_ui/`）。 |
+| 系统语义与多通道驱动 | `adapters/ports.py`、`adapters/composite.py`、`adapters/playbook_runner.py`、`adapters/declarative_ui.py`、`adapters/drivers/`、`adapters/fhir.py`、`adapters/middleware_rest.py`、`adapters/hl7v2.py` | `ClinicalSystem` 规定查询、提交、回读及恢复。`CompositeClinicalSystem` 按依赖选定通道混合路由；`PlaybookRunner` 与 `DeclarativeHospitalUI` 驱动本机 `computer_use`（Windows UIA / 浏览器 CDP）与通用 `ip_kvm`（硬件无关 `KVMTransport` + 纯 HID 中文分段 OCR 校验），原生路径支持完整 FHIR R4 与声明式 REST 中间件。 |
 | 患者事实清洗与结构化病历 | `records/clinical_record.py`、`contracts/structured-clinical-record.schema.json` | 把仓库外采集包清洗为带每节来源、显式缺口和显式冲突的结构化病历；规则通用、无院方与患者内容。规则见[病历收集与结构化](clinical-record.md)。它只整理已采集内容，不做临床判断，也不写回院内系统。 |
+
+## 已确认架构决策（ADR-1 至 ADR-4）
+
+为兼顾医院隔离终端与医生电脑直接部署两类核心现场需求，MAP 锁定以下四项架构决策：
+
+- **ADR-1（双通道并行演进：`computer_use` 理想形态 ∥ `ip_kvm` 物理隔离兜底）**：本机直连（Windows UIA 桌面控件树 + 浏览器 CDP 附着 + 人工即时抢占）作为理想形态，硬件无关 `KVMTransport`（兼容 `glkvm-native`、PiKVM/JetKVM/NanoKVM、VNC/HID 等）作为物理隔离兜底，两者并行建设并共享同一声明式 `PlaybookRunner`、`CompositeClinicalSystem` 混合通道路由与 `TaskEngine` 受控状态机。
+- **ADR-2（IP KVM 中文长文输入三层策略）**：优先完善**策略 B（纯 HID 键码/输入法分段注入 + 局部 OCR 逐段校对）**作为第一兜底，确保零院方软件侵入；同时提供**策略 A（KVM 协议剪贴板 / 受控局域网中转页）**的可选插件能力按医院策略开启；未通过中文输入资格校验的站点自动执行**策略 C（安全降级 `draft_only`）**，绝不静默写入错字病历。
+- **ADR-3（复核交互对齐 OPL App MiniApp / MCP App 标准形态）**：不建设重型独立 HIS/Web 管理系统，而是通过标准 MCP Server（`mcp_server.py`）接入任意宿主，并围绕 **OPL App MiniApp / MCP App** 标准嵌入式形态构建轻量化临床复核卡片（病程句级溯源高亮、医嘱三栏差异、回读一手截图并排核验），在非 OPL 宿主下自动回退至仅绑定 `127.0.0.1` 的一次性 Token 本地视图，严格操作同一 `TaskRuntime` 对象。
+- **ADR-4（临床起草模型双轨并存）**：`medicine/` 层通过 `LLMClinicalProposer` 与 `PHIGuard` 同时支持**院内本地模型直连（`local_trusted`，默认兜底、零 PHI 出网）**与**本地可逆假名化脱敏后调用云端强模型（`pseudonymize_outbound`，按医院策略开启）**；两条路径产出的草案均必须通过 `medicine/proposals.py` 的确定性规则与目录校验拦截幻觉，缺项自动触发 `WorkflowInputRequired`。
+
+## 理想形态与统一运行时分层
+
+理想形态下的新院接入不再要求每家医院从零编写 `provider.py`，而是由五层协同完成：
+
+1. **交互与宿主协议层**：标准 MCP Server + Skills + OPL MiniApp / MCP App 复核视图（非 OPL 宿主提供 `127.0.0.1` loopback 回退），让医生以自然语言发起并在几十秒内完成精确版本号批准与回读验收。
+2. **受控临床内核层（跨平台 Windows / macOS / Linux）**：`TaskEngine`、`SqliteTaskStore`、跨平台锁与安全边界、`PHIGuard` 与 `LLMClinicalProposer` + 确定性校验护栏。
+3. **混合通道路由与渐进门禁层**：`CompositeClinicalSystem` 按 `dependency_id` 分发 `native_api` / `middleware` / `computer_use` / `ip_kvm`，支持在 `partial_draft_allowed` 模式下先接通部分来源输出带明确缺口的草稿，写回仍坚持全证据严格门禁。
+4. **声明式执行与双驱动层**：通道无关的 `map-site-playbook.v2`、`PlaybookRunner` 与 `DeclarativeHospitalUI`，原生承载 Track A（`WindowsUIADriver` + `BrowserCDPDriver`）与 Track B（`KVMUIDriver` + `OCREngine` + 三层中文输入策略）及生产级 `FHIRClinicalSystem` / `RestMiddlewareAdapter` / `hl7v2`。
+5. **站点工具链与合规运维层**：仓库外 `SitePack` 同步（`site_sync`）、脱敏交互录制（`site_recorder`）、自动化故障注入资格压测（`site_qualify`）、断网离线打包（`build_offline_bundle`）、静态加密与 TTL 擦除（`storage/`）以及本地量化指标观察（`site_metrics`）。
 
 工作流不调用医学模型内部方法，也不修改医学提案内容；医学组件不接收键鼠客户端或医院写入权限。一个医嘱任务中，医学组件提出候选变更及依据，业务工作流确认必需资料和医生对确切版本的批准，适配器负责院内录入与可见对象回读。`TaskEngine` 是跨能力的状态编排，不等于各项临床业务流程已经完成。
 
