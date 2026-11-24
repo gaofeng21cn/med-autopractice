@@ -6,11 +6,11 @@
   <title>MAP 临床审阅卡__MAP_TITLE_SUFFIX__</title>
   <style>
     :root {
-      --bg: #f4f7fb;
-      --card: #ffffff;
-      --border: #d7e1ec;
-      --ink: #172538;
-      --muted: #52657d;
+      --bg: var(--color-background-secondary, #f4f7fb);
+      --card: var(--color-background-primary, #ffffff);
+      --border: var(--color-border-primary, #d7e1ec);
+      --ink: var(--color-text-primary, #172538);
+      --muted: var(--color-text-secondary, #52657d);
       --primary: #1259c3;
       --danger: #b91c1c;
       --ok: #047857;
@@ -19,12 +19,13 @@
     * { box-sizing: border-box; }
     body {
       margin: 0; padding: 16px; background: var(--bg); color: var(--ink);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif);
       font-size: 14px; line-height: 1.5;
     }
     .wrap { max-width: 960px; margin: 0 auto; display: grid; gap: 14px; }
     .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
     .banner { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+    .warn-box { background: #fef3c7; border-color: #f59e0b; color: #78350f; display: none; }
     .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: 600; font-size: 12px; background: #e0edff; color: var(--primary); }
     .badge.ok { background: #d1fae5; color: var(--ok); }
     .badge.warn { background: #fef3c7; color: var(--warn); }
@@ -32,12 +33,13 @@
     h2 { margin: 0 0 8px; font-size: 15px; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     th, td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
-    th { background: #f8fafc; color: var(--muted); font-weight: 600; }
-    pre { margin: 0; background: #f8fafc; border: 1px solid var(--border); padding: 10px; border-radius: 6px; overflow: auto; white-space: pre-wrap; }
+    th { background: rgba(148, 163, 184, 0.12); color: var(--muted); font-weight: 600; }
+    pre { margin: 0; background: rgba(148, 163, 184, 0.08); border: 1px solid var(--border); padding: 10px; border-radius: 6px; overflow: auto; white-space: pre-wrap; }
     .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-    input[type=text] { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; min-width: 180px; }
+    input[type=text] { padding: 7px 10px; border: 1px solid var(--border); border-radius: 6px; min-width: 180px; background: var(--card); color: var(--ink); }
     button { border: 0; border-radius: 6px; padding: 8px 14px; cursor: pointer; font-weight: 600; color: #fff; background: var(--primary); }
     button.ok { background: var(--ok); }
+    button.warn { background: var(--warn); }
     button.danger { background: var(--danger); }
     button.secondary { background: #475569; }
     button:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -57,6 +59,8 @@
       </div>
     </div>
 
+    <div class="card warn-box" id="missing-banner"></div>
+
     <div class="card">
       <h2>医学提案正文 / 医嘱变更（需核对精确摘要与来源）</h2>
       <div class="meta" id="prop-meta"></div>
@@ -74,8 +78,9 @@
     </div>
 
     <div class="card">
-      <h2>提交回读证据与验收核对</h2>
-      <pre id="readback-body">尚未执行写入提交</pre>
+      <h2>原系统回读证据与验收核对</h2>
+      <div class="meta" id="readback-summary" style="margin-bottom:8px;">尚未执行写入提交</div>
+      <pre id="readback-body">{}</pre>
     </div>
 
     <div class="card">
@@ -84,6 +89,7 @@
         <input type="text" id="clinician-id" placeholder="医生工号 / clinician_id" value="demo-clinician">
         <input type="text" id="action-note" placeholder="审阅说明或取消原因（可选）">
         <button id="btn-submit" type="button">批准此版本并提交</button>
+        <button id="btn-reconcile" class="warn" type="button">对账核查</button>
         <button id="btn-accept" class="ok" type="button">确认回读并验收通过</button>
         <button id="btn-reject" class="secondary" type="button">退回不通过</button>
         <button id="btn-cancel" class="danger" type="button">中止/取消任务</button>
@@ -95,29 +101,102 @@
   <script>
     (function () {
       const BOOT = __MAP_BOOTSTRAP_JSON__;
-      const state = { card: BOOT.initialCard, token: BOOT.authToken || "", apiBase: BOOT.apiBase || "" };
+      const state = {
+        card: BOOT.initialCard,
+        token: BOOT.authToken || "",
+        apiBase: BOOT.apiBase || "",
+        hostInitialized: false,
+        hostCapabilities: {}
+      };
+      const hasHostBridge = !state.apiBase && typeof window.parent !== "undefined" && window.parent !== null && window.parent !== window;
 
       function el(id) { return document.getElementById(id); }
 
-      function notifyHost(method, params) {
-        if (window.parent && window.parent !== window) {
-          window.parent.postMessage({ jsonrpc: "2.0", method, params }, "*");
+      function applyHostContext(ctx) {
+        if (!ctx || typeof ctx !== "object") return;
+        if (ctx.theme === "dark" || ctx.theme === "light") {
+          document.documentElement.dataset.theme = ctx.theme;
+        }
+        const vars = ctx.styles && ctx.styles.variables;
+        if (vars && typeof vars === "object" && document.documentElement && document.documentElement.style) {
+          for (const [k, v] of Object.entries(vars)) {
+            if (typeof k === "string" && k.startsWith("--") && typeof v === "string") {
+              document.documentElement.style.setProperty(k, v);
+            }
+          }
         }
       }
 
-      async function apiCall(path, method, body) {
-        if (!state.apiBase && window.parent && window.parent !== window) {
-          notifyHost("tools/call", { name: path, arguments: body || {} });
-          return null;
+      function cardFromView(view) {
+        if (!view || typeof view !== "object") return null;
+        if (view.subject && view.available_actions) return view;
+        const req = view.request || {};
+        const subj = view.subject || req.subject || {};
+        const snap = view.snapshot || {};
+        const prop = view.proposal || null;
+        const exec = view.execution || {};
+        const rb = exec.readback || {};
+        const rcpt = exec.receipt || {};
+        const st = String(view.status || "");
+        return {
+          task_id: view.task_id,
+          status: st,
+          next_action: view.next_action,
+          capability_id: view.capability_id || req.capability_id,
+          intent: view.intent || req.intent || req.goal,
+          subject: { site_id: subj.site_id, patient_id: subj.patient_id, encounter_id: subj.encounter_id },
+          snapshot_revision: snap.revision,
+          coverage: snap.coverage || [],
+          missing_information: view.missing_information || [],
+          required_input: view.required_input || [],
+          facts: snap.facts || [],
+          proposal: prop ? {
+            digest: prop.digest,
+            generator_ref: prop.generator_ref,
+            cited_fact_ids: prop.cited_fact_ids || prop.fact_refs || [],
+            knowledge_refs: prop.knowledge_refs || [],
+            payload: prop.payload
+          } : null,
+          execution: {
+            object_ref: rcpt.object_ref || rb.object_ref,
+            receipt_state: rcpt.state,
+            readback_state: rb.state,
+            readback_subject: rb.subject,
+            readback_digest: rb.proposal_digest,
+            readback_visible_payload: rb.visible_payload,
+            readback_trace_refs: rb.trace_refs || [],
+            screenshot_ref: rb.screenshot_ref,
+            resource_version_ref: rb.resource_version_ref,
+            observed_at: rb.observed_at
+          },
+          available_actions: {
+            can_submit: (st === "needs_pre_submit_review" || st === "ready_to_submit") && Boolean(prop && prop.digest),
+            can_accept: st === "needs_clinician_acceptance",
+            can_revise: st === "needs_pre_submit_review" || st === "ready_to_submit" || st === "needs_clinician_acceptance" || st === "draft_only" || st === "changes_requested",
+            can_reconcile: st === "execution_uncertain",
+            can_refresh: st === "needs_refresh" || st === "needs_information" || st === "draft_only",
+            can_cancel: st !== "accepted" && st !== "cancelled" && st !== "rejected"
+          }
+        };
+      }
+
+      function extractCardFromHostPayload(payload) {
+        if (!payload || typeof payload !== "object") return null;
+        if (payload._meta && payload._meta.ui && payload._meta.ui.card) {
+          return payload._meta.ui.card;
         }
-        const headers = { "Content-Type": "application/json" };
-        if (state.token) headers["X-MAP-Token"] = state.token;
-        const resp = await fetch((state.apiBase || "") + path, {
-          method, headers, body: body ? JSON.stringify(body) : undefined
-        });
-        const data = await resp.json();
-        if (!resp.ok) throw new Error(data.error || ("HTTP " + resp.status));
-        return data;
+        if (payload.card) return payload.card;
+        if (payload.structuredContent) return cardFromView(payload.structuredContent);
+        if (payload.result) return extractCardFromHostPayload(payload.result);
+        if (payload.task_id) return cardFromView(payload);
+        return null;
+      }
+
+      function statusBadgeClass(status) {
+        if (status === "accepted" || status === "needs_clinician_acceptance") return "badge ok";
+        if (status === "execution_uncertain" || status === "blocked" || status === "rejected" || status === "cancelled") return "badge err";
+        if (status === "draft_only" || status === "needs_information" || status === "needs_refresh") return "badge warn";
+        return "badge";
       }
 
       function renderCard(card) {
@@ -126,8 +205,21 @@
         const subj = card.subject || {};
         el("hdr-subject").textContent =
           "站点: " + (subj.site_id || "-") + " | 患者: " + (subj.patient_id || "-") + " | 就诊: " + (subj.encounter_id || "-");
-        el("hdr-status").textContent = card.status || "-";
+        const badge = el("hdr-status");
+        badge.textContent = card.status || "-";
+        badge.className = statusBadgeClass(card.status);
         el("hdr-task").textContent = "Task: " + (card.task_id || "-") + " (" + (card.capability_id || "-") + ")";
+
+        const missBanner = el("missing-banner");
+        const missing = card.missing_information || [];
+        const isPartial = Boolean(card.proposal && card.proposal.payload && card.proposal.payload.partial_draft);
+        if (missing.length > 0 || isPartial) {
+          missBanner.style.display = "block";
+          missBanner.textContent = "资料缺项提示（仅草稿，禁止直接提交）: " + (missing.join("、") || "存在未核实来源");
+        } else {
+          missBanner.style.display = "none";
+          missBanner.textContent = "";
+        }
 
         if (card.proposal) {
           el("prop-meta").textContent =
@@ -152,32 +244,179 @@
           tbody.appendChild(tr);
         }
 
-        el("readback-body").textContent = JSON.stringify(card.execution || {}, null, 2);
+        const exec = card.execution || {};
+        if (exec.object_ref || exec.readback_state || exec.receipt_state) {
+          const rbSubj = exec.readback_subject || {};
+          const subjMatch = rbSubj.patient_id && rbSubj.patient_id === subj.patient_id && rbSubj.encounter_id === subj.encounter_id;
+          const digMatch = Boolean(exec.readback_digest && card.proposal && exec.readback_digest === card.proposal.digest);
+          el("readback-summary").textContent =
+            "对象: " + (exec.object_ref || "-") +
+            " | 写入态: " + (exec.receipt_state || "-") +
+            " | 回读态: " + (exec.readback_state || "-") +
+            " | 身份一致: " + (rbSubj.patient_id ? (subjMatch ? "一致" : "不一致!") : "未核实") +
+            " | 摘要一致: " + (digMatch ? "一致" : "不一致/待核查") +
+            (exec.resource_version_ref ? " | 版本: " + exec.resource_version_ref : "") +
+            (exec.screenshot_ref ? " | 截图: " + exec.screenshot_ref : "");
+        } else {
+          el("readback-summary").textContent = "尚未执行写入提交";
+        }
+        el("readback-body").textContent = JSON.stringify(exec, null, 2);
+
         const acts = card.available_actions || {};
         el("btn-submit").disabled = !acts.can_submit;
+        el("btn-reconcile").disabled = !acts.can_reconcile;
         el("btn-accept").disabled = !acts.can_accept;
         el("btn-reject").disabled = !acts.can_accept;
         el("btn-cancel").disabled = !acts.can_cancel;
       }
 
+      const pendingRpc = new Map();
+      let nextRpcId = 1;
+
+      function postToHost(payload) {
+        if (hasHostBridge) {
+          window.parent.postMessage(payload, "*");
+        }
+      }
+
+      function hostRequest(method, params) {
+        const id = nextRpcId++;
+        return new Promise(function (resolve, reject) {
+          pendingRpc.set(id, { resolve, reject });
+          postToHost({ jsonrpc: "2.0", id, method, params: params || {} });
+        });
+      }
+
       window.addEventListener("message", function (ev) {
-        const msg = ev.data;
-        if (msg && msg.method === "ui/notifications/tool-result" && msg.params && msg.params.card) {
-          renderCard(msg.params.card);
+        const msg = ev && ev.data;
+        if (!msg || typeof msg !== "object") return;
+
+        if (msg.id !== undefined && msg.id !== null && !msg.method) {
+          const pending = pendingRpc.get(msg.id);
+          if (pending) {
+            pendingRpc.delete(msg.id);
+            if (msg.error) {
+              pending.reject(new Error(msg.error.message || JSON.stringify(msg.error)));
+            } else {
+              pending.resolve(msg.result);
+            }
+          }
+          return;
+        }
+
+        if (msg.method === "ping" && msg.id !== undefined && msg.id !== null) {
+          postToHost({ jsonrpc: "2.0", id: msg.id, result: {} });
+          return;
+        }
+
+        if (msg.method === "ui/notifications/tool-input") {
+          el("action-feedback").textContent = "正在加载临床任务上下文...";
+          return;
+        }
+        if (msg.method === "ui/notifications/tool-result") {
+          const card = extractCardFromHostPayload(msg.params);
+          if (card) {
+            renderCard(card);
+            el("action-feedback").textContent = "已同步最新任务状态: " + (card.status || "-");
+          }
+          return;
+        }
+        if (msg.method === "ui/notifications/tool-cancelled") {
+          el("action-feedback").textContent = "宿主已取消本次操作: " + ((msg.params && msg.params.reason) || "");
+          return;
+        }
+        if (msg.method === "ui/notifications/host-context-changed") {
+          applyHostContext(msg.params);
         }
       });
 
+      async function initHostBridge() {
+        if (!hasHostBridge) return;
+        try {
+          const initRes = await hostRequest("ui/initialize", {
+            protocolVersion: "2026-01-26",
+            appInfo: { name: "med-autopractice-review", version: "0.1.5" },
+            appCapabilities: {}
+          });
+          state.hostInitialized = true;
+          state.hostCapabilities = (initRes && initRes.hostCapabilities) || {};
+          applyHostContext(initRes && initRes.hostContext);
+          postToHost({ jsonrpc: "2.0", method: "ui/notifications/initialized", params: {} });
+          if (typeof ResizeObserver === "function" && el("app-root")) {
+            const ro = new ResizeObserver(function () {
+              const rect = el("app-root").getBoundingClientRect();
+              postToHost({
+                jsonrpc: "2.0",
+                method: "ui/notifications/size-changed",
+                params: { width: Math.ceil(rect.width), height: Math.ceil(rect.height) }
+              });
+            });
+            ro.observe(el("app-root"));
+          }
+        } catch (err) {
+          el("action-feedback").textContent = "MCP App 握手失败: " + String(err);
+        }
+      }
+
+      async function invokeAction(toolName, toolArgs, httpPath) {
+        if (hasHostBridge) {
+          const res = await hostRequest("tools/call", { name: toolName, arguments: toolArgs });
+          if (res && res.isError) {
+            const errText = (res.content && res.content[0] && res.content[0].text) || "工具调用失败";
+            throw new Error(errText);
+          }
+          const card = extractCardFromHostPayload(res);
+          if (card) renderCard(card);
+          return { card, raw: res };
+        }
+        const headers = { "Content-Type": "application/json" };
+        if (state.token) headers["X-MAP-Token"] = state.token;
+        const resp = await fetch((state.apiBase || "") + httpPath, {
+          method: "POST", headers, body: JSON.stringify(toolArgs)
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || ("HTTP " + resp.status));
+        if (data && data.card) renderCard(data.card);
+        return { card: data && data.card, raw: data };
+      }
+
       el("btn-submit").addEventListener("click", async function () {
-        if (!state.card) return;
+        if (!state.card || !state.card.proposal) return;
         try {
           const cid = el("clinician-id").value.trim();
-          const res = await apiCall("/api/tasks/" + encodeURIComponent(state.card.task_id) + "/submit", "POST", {
-            clinician_id: cid,
-            proposal_digest: state.card.proposal.digest,
-            snapshot_revision: state.card.snapshot_revision
-          });
-          if (res && res.card) renderCard(res.card);
-          el("action-feedback").textContent = "已提交，请核对回读与截图。";
+          const out = await invokeAction(
+            "map_submit_task",
+            {
+              task_id: state.card.task_id,
+              clinician_id: cid,
+              proposal_digest: state.card.proposal.digest,
+              snapshot_revision: state.card.snapshot_revision
+            },
+            "/api/tasks/" + encodeURIComponent(state.card.task_id) + "/submit"
+          );
+          const st = out.card && out.card.status;
+          if (st === "needs_clinician_acceptance") {
+            el("action-feedback").textContent = "已写入并完成独立回读，请核对证据并验收。";
+          } else if (st === "execution_uncertain") {
+            el("action-feedback").textContent = "写入结果不确定 (execution_uncertain)，请点击「对账核查」确认原系统状态。";
+          } else if (st === "needs_refresh") {
+            el("action-feedback").textContent = "源系统事实已变更 (needs_refresh)，请刷新后再审批。";
+          } else {
+            el("action-feedback").textContent = "提交返回状态: " + (st || "-");
+          }
+        } catch (err) { el("action-feedback").textContent = String(err); }
+      });
+
+      el("btn-reconcile").addEventListener("click", async function () {
+        if (!state.card) return;
+        try {
+          const out = await invokeAction(
+            "map_reconcile_task",
+            { task_id: state.card.task_id },
+            "/api/tasks/" + encodeURIComponent(state.card.task_id) + "/reconcile"
+          );
+          const st = out.card && out.card.status;
+          el("action-feedback").textContent = "对账核查完成，当前状态: " + (st || "-");
         } catch (err) { el("action-feedback").textContent = String(err); }
       });
 
@@ -186,30 +425,41 @@
         try {
           const cid = el("clinician-id").value.trim();
           const fb = el("action-note").value.trim();
-          const res = await apiCall("/api/tasks/" + encodeURIComponent(state.card.task_id) + "/review", "POST", {
-            clinician_id: cid, accepted, feedback: fb, digest: state.card.proposal && state.card.proposal.digest
-          });
-          if (res && res.card) renderCard(res.card);
-          el("action-feedback").textContent = accepted ? "已验收确认。" : "已退回修订。";
+          const out = await invokeAction(
+            "map_review_task",
+            {
+              task_id: state.card.task_id,
+              clinician_id: cid,
+              accepted: accepted,
+              feedback: fb,
+              digest: state.card.proposal && state.card.proposal.digest
+            },
+            "/api/tasks/" + encodeURIComponent(state.card.task_id) + "/review"
+          );
+          const st = out.card && out.card.status;
+          el("action-feedback").textContent = (st === "accepted")
+            ? "已验收确认 (accepted)。"
+            : ("已更新审阅结果: " + (st || "-"));
         } catch (err) { el("action-feedback").textContent = String(err); }
       }
 
-      el("btn-accept").addEventListener("click", function () { sendReview(true); });
-      el("btn-reject").addEventListener("click", function () { sendReview(false); });
+      el("btn-accept").addEventListener("click", function () { return sendReview(true); });
+      el("btn-reject").addEventListener("click", function () { return sendReview(false); });
       el("btn-cancel").addEventListener("click", async function () {
         if (!state.card) return;
         try {
           const cid = el("clinician-id").value.trim();
           const reason = el("action-note").value.trim() || "clinician_cancelled";
-          const res = await apiCall("/api/tasks/" + encodeURIComponent(state.card.task_id) + "/cancel", "POST", {
-            clinician_id: cid, reason
-          });
-          if (res && res.card) renderCard(res.card);
-          el("action-feedback").textContent = "任务已取消。";
+          const out = await invokeAction(
+            "map_cancel_task",
+            { task_id: state.card.task_id, clinician_id: cid, reason: reason },
+            "/api/tasks/" + encodeURIComponent(state.card.task_id) + "/cancel"
+          );
+          el("action-feedback").textContent = "任务已取消 (" + ((out.card && out.card.status) || "cancelled") + ")。";
         } catch (err) { el("action-feedback").textContent = String(err); }
       });
 
-      notifyHost("ui/notifications/initialized", { app: "med-autopractice-review" });
+      initHostBridge();
       if (state.card) renderCard(state.card);
     })();
   </script>

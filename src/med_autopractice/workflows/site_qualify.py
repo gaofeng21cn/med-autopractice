@@ -9,6 +9,8 @@ from difflib import SequenceMatcher
 from hashlib import sha256
 import json
 from pathlib import Path
+import sys
+import time
 from typing import Any
 
 from med_autopractice.adapters.drivers.text_entry import ChineseEntryUnqualifiedError
@@ -204,33 +206,72 @@ def _check_chinese_long_text_and_readback(
 def _check_human_interrupt(
     driver: UIDriver,
     interrupt_injector: Callable[[bool], None] | None,
+    *,
+    interactive_handoff: bool = False,
+    handoff_timeout_sec: float = 30.0,
+    poll_interval_sec: float = 0.25,
 ) -> QualificationCheckItem:
-    if interrupt_injector is None:
+    if interrupt_injector is None and not interactive_handoff:
         return QualificationCheckItem(
             "human_interrupt_and_recovery", False,
-            "missing interrupt_injector for human takeover verification", {},
+            "missing interrupt_injector or interactive handoff verification", {},
         )
     halted = False
-    try:
-        interrupt_injector(True)
-        try:
-            driver.observe()
-        except HumanInterruptError:
-            halted = True
-    finally:
-        interrupt_injector(False)
     recovered = False
-    if halted:
+    if interrupt_injector is not None:
+        try:
+            interrupt_injector(True)
+            try:
+                driver.observe()
+            except HumanInterruptError:
+                halted = True
+        finally:
+            interrupt_injector(False)
+        if halted:
+            try:
+                driver.check_human_interrupt()
+                recovered = True
+            except Exception:
+                recovered = False
+    else:
         try:
             driver.check_human_interrupt()
-            recovered = True
-        except Exception:
-            recovered = False
+        except Exception as error:
+            return QualificationCheckItem(
+                "human_interrupt_and_recovery", False,
+                f"device already interrupted before test: {error}", {},
+            )
+        print(
+            f"[MAP Qualification] 请在 {handoff_timeout_sec:.0f}s 内在 MAP Desk / 预览页面触发「暂停 Agent」或「人工接管」...",
+            file=sys.stderr, flush=True,
+        )
+        deadline = time.monotonic() + handoff_timeout_sec
+        while time.monotonic() < deadline:
+            try:
+                driver.check_human_interrupt()
+            except HumanInterruptError:
+                halted = True
+                break
+            time.sleep(poll_interval_sec)
+        if halted:
+            print(
+                f"[MAP Qualification] 已检测到人工接管中断！请在 {handoff_timeout_sec:.0f}s 内恢复「允许 Agent 操作」...",
+                file=sys.stderr, flush=True,
+            )
+            rec_deadline = time.monotonic() + handoff_timeout_sec
+            while time.monotonic() < rec_deadline:
+                try:
+                    driver.check_human_interrupt()
+                    recovered = True
+                    break
+                except HumanInterruptError:
+                    time.sleep(poll_interval_sec)
+
     ok = halted and recovered
     return QualificationCheckItem(
         "human_interrupt_and_recovery", ok,
         "preempted immediately on human input and recovered cleanly" if ok else "failed to halt or recover cleanly",
-        {"halted_immediately": halted, "recovered_cleanly": recovered},
+        {"halted_immediately": halted, "recovered_cleanly": recovered, "mode": "injector" if interrupt_injector else "interactive"},
     )
 
 
@@ -274,6 +315,8 @@ def run_qualification_suite(
     write_playbook: Playbook | None = None,
     readback_playbook: Playbook | None = None,
     interrupt_injector: Callable[[bool], None] | None = None,
+    interactive_handoff: bool = False,
+    handoff_timeout_sec: float = 30.0,
     editor_target: str | None = "病程编辑器",
     editor_selector: str | None = "#note-editor",
     editor_region_hint: tuple[int, int, int, int] | None = (40, 160, 540, 360),
@@ -297,7 +340,11 @@ def run_qualification_suite(
         editor_region_hint=editor_region_hint,
         sample_text=sample_text,
     )
-    c5 = _check_human_interrupt(driver, interrupt_injector)
+    c5 = _check_human_interrupt(
+        driver, interrupt_injector,
+        interactive_handoff=interactive_handoff,
+        handoff_timeout_sec=handoff_timeout_sec,
+    )
     checks = (c1, c2, c3, c4, c5)
     all_passed = all(c.passed for c in checks)
 

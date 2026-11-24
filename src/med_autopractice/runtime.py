@@ -87,9 +87,12 @@ class TaskRuntime:
         self,
         engine: TaskEngine,
         workflows: Mapping[str, WorkflowDefinition] = PHASE1_WORKFLOWS,
+        *,
+        session_guard=None,
     ):
         self.engine = engine
         self.workflows = workflows
+        self.session_guard = session_guard
 
     def start(self, request: TaskRequest, *, auto_submit: bool = False) -> dict:
         definition = self.workflows.get(request.capability_id)
@@ -246,9 +249,11 @@ class TaskRuntime:
                 "idempotency_key": task.idempotency_key,
                 "receipt": None if task.receipt is None else asdict(task.receipt),
                 "readback": None if task.readback is None else {
+                    "subject": asdict(task.readback.subject),
                     "object_ref": task.readback.object_ref,
                     "state": task.readback.state,
                     "proposal_digest": task.readback.proposal_digest,
+                    "visible_payload": task.readback.visible_payload,
                     "screenshot_ref": task.readback.screenshot_ref,
                     "resource_version_ref": task.readback.resource_version_ref,
                     "trace_refs": list(task.readback.trace_refs),

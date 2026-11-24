@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -12,6 +14,8 @@ from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
@@ -21,7 +25,7 @@ from med_autopractice.domain.task import Fact, Snapshot, SubjectRef, TaskRequest
 from med_autopractice.mcp_server import MAPMCPServer, REVIEW_UI_URI  # noqa: E402
 from med_autopractice.medicine.llm_proposer import LLMClinicalProposer  # noqa: E402
 from med_autopractice.medicine.phi_guard import PHIGuard  # noqa: E402
-from med_autopractice.review_ui.renderer import render_review_app_html  # noqa: E402
+from med_autopractice.review_ui.renderer import build_review_card_model, render_review_app_html  # noqa: E402
 from med_autopractice.review_ui.server import LocalReviewServer  # noqa: E402
 from med_autopractice.runtime import build_synthetic_runtime  # noqa: E402
 
@@ -89,15 +93,22 @@ class Phase2MCPLLMReviewTests(unittest.TestCase):
             )
             responses = [json.loads(line) for line in proc.stdout.strip().splitlines() if line.strip()]
             self.assertEqual([r["id"] for r in responses], [1, 2, 3, 4, 5])
-            tool_names = {t["name"] for t in responses[1]["result"]["tools"]}
+            self.assertIn("io.modelcontextprotocol/ui", responses[0]["result"]["capabilities"]["extensions"])
+            tools = responses[1]["result"]["tools"]
+            tool_names = {t["name"] for t in tools}
             self.assertEqual(len(tool_names), 10)
             self.assertIn("map_submit_task", tool_names)
             self.assertIn("map_cancel_task", tool_names)
+            submit_tool = next(t for t in tools if t["name"] == "map_submit_task")
+            self.assertEqual(submit_tool["_meta"]["ui"]["resourceUri"], REVIEW_UI_URI)
+            self.assertEqual(submit_tool["_meta"]["ui"]["visibility"], ["model", "app"])
             self.assertIn("text/html;profile=mcp-app", responses[2]["result"]["contents"][0]["mimeType"])
             self.assertEqual(responses[3]["result"]["structuredContent"]["record_id"], "SYNTH-REC-1")
             started = responses[4]["result"]["structuredContent"]
             self.assertEqual(started["status"], "ready_to_submit")
-            self.assertIn("ui", responses[4]["result"]["_meta"])
+            self.assertEqual(responses[4]["result"]["_meta"]["ui"]["resourceUri"], REVIEW_UI_URI)
+            self.assertEqual(responses[4]["result"]["_meta"]["ui"]["card"]["subject"]["patient_id"], "synthetic-p1")
+            self.assertEqual(responses[4]["result"]["_meta"]["ui"]["card"]["capability_id"], "write_inpatient_notes")
 
             # Verify loopback HTTP MCP server shares persistent runtime state
             runtime = _synthetic_runtime(store)
@@ -305,3 +316,157 @@ class Phase2MCPLLMReviewTests(unittest.TestCase):
                     rev_data = json.loads(resp.read().decode("utf-8"))
                 self.assertEqual(rev_data["task"]["status"], "accepted")
                 self.assertEqual(runtime.show(started["task_id"])["status"], "accepted")
+                # Card projection preserves readback subject & visible_payload
+                accepted_card = build_review_card_model(rev_data["task"])
+                self.assertEqual(accepted_card["subject"]["patient_id"], "synthetic-p2")
+                self.assertEqual(accepted_card["execution"]["readback_subject"]["encounter_id"], "synthetic-e2")
+                self.assertIsNotNone(accepted_card["execution"]["readback_visible_payload"])
+
+    def test_mcp_app_host_handshake_and_tool_roundtrip(self):
+        node_bin = shutil.which("node")
+        if not node_bin:
+            self.skipTest("node binary not installed for simulated MCP App host test")
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = _synthetic_runtime(Path(tmp) / "tasks.sqlite")
+            mcp = MAPMCPServer(runtime, repo_root=ROOT)
+            res = mcp.handle_rpc({"jsonrpc": "2.0", "id": 1, "method": "resources/read", "params": {"uri": REVIEW_UI_URI}})
+            html = res["result"]["contents"][0]["text"]
+            m = re.search(r"<script>([\s\S]*)</script>", html)
+            self.assertIsNotNone(m)
+            app_js = m.group(1)
+
+            start_res = mcp.call_tool("map_start_task", {
+                "request_id": "mcp-host-1",
+                "capability_id": "revise_orders",
+                "intent": "调整医嘱",
+                "site_id": "demo-site",
+                "patient_id": "synthetic-p3",
+                "encounter_id": "synthetic-e3",
+                "authority_ref": "demo://grant",
+            })
+            submit_res = mcp.call_tool("map_submit_task", {
+                "task_id": start_res["structuredContent"]["task_id"],
+                "clinician_id": "demo-clinician",
+                "proposal_digest": start_res["structuredContent"]["proposal"]["digest"],
+                "snapshot_revision": start_res["structuredContent"]["snapshot"]["revision"],
+            })
+            review_res = mcp.call_tool("map_review_task", {
+                "task_id": start_res["structuredContent"]["task_id"],
+                "clinician_id": "demo-clinician",
+                "accepted": True,
+                "digest": start_res["structuredContent"]["proposal"]["digest"],
+            })
+            uncertain_res = {
+                "isError": False,
+                "structuredContent": {
+                    **start_res["structuredContent"],
+                    "status": "execution_uncertain",
+                    "execution": {"receipt": {"object_ref": "demo://ui/obj/x", "state": "entered"}, "readback": None},
+                },
+            }
+
+            harness = Path(tmp) / "host_sim.js"
+            harness.write_text(f"""
+const assert = require('assert');
+const elements = new Map();
+function makeEl(id) {{
+  const obj = {{
+    id, textContent: '', value: id === 'clinician-id' ? 'demo-clinician' : '',
+    disabled: false, className: '', style: {{}}, listeners: {{}},
+    children: [],
+    addEventListener(ev, fn) {{ this.listeners[ev] = fn; }},
+    appendChild(ch) {{ this.children.push(ch); }},
+    getBoundingClientRect() {{ return {{ width: 640, height: 480 }}; }}
+  }};
+  elements.set(id, obj);
+  return obj;
+}}
+for (const id of [
+  'app-root','hdr-title','hdr-subject','hdr-status','hdr-task','missing-banner',
+  'prop-meta','prop-body','facts-body','readback-summary','readback-body',
+  'clinician-id','action-note','btn-submit','btn-reconcile','btn-accept',
+  'btn-reject','btn-cancel','action-feedback'
+]) makeEl(id);
+
+const postedToHost = [];
+const listeners = [];
+const startRes = {json.dumps(start_res, ensure_ascii=False)};
+const submitRes = {json.dumps(submit_res, ensure_ascii=False)};
+const reviewRes = {json.dumps(review_res, ensure_ascii=False)};
+const uncertainRes = {json.dumps(uncertain_res, ensure_ascii=False)};
+let submitMode = 'normal';
+
+global.document = {{
+  documentElement: {{ dataset: {{}}, style: {{ vars: {{}}, setProperty(k,v) {{ this.vars[k]=v; }} }} }},
+  getElementById(id) {{ return elements.get(id); }},
+  createElement(tag) {{ return {{ tag, textContent: '', children: [], appendChild(c) {{ this.children.push(c); }} }}; }}
+}};
+global.window = {{
+  addEventListener(ev, fn) {{ if (ev === 'message') listeners.push(fn); }},
+  parent: {{
+    postMessage(msg) {{
+      postedToHost.push(msg);
+      if (msg.method === 'ui/initialize') {{
+        assert.strictEqual(msg.params.protocolVersion, '2026-01-26');
+        queueMicrotask(() => listeners.forEach(fn => fn({{
+          data: {{
+            jsonrpc: '2.0', id: msg.id,
+            result: {{
+              protocolVersion: '2026-01-26',
+              hostCapabilities: {{ serverTools: {{}} }},
+              hostContext: {{ theme: 'dark', styles: {{ variables: {{ '--color-background-primary': '#111' }} }} }}
+            }}
+          }}
+        }})));
+      }} else if (msg.method === 'tools/call') {{
+        let result;
+        if (msg.params.name === 'map_submit_task') {{
+          result = submitMode === 'uncertain' ? uncertainRes : submitRes;
+        }} else if (msg.params.name === 'map_review_task') {{
+          result = reviewRes;
+        }}
+        queueMicrotask(() => listeners.forEach(fn => fn({{
+          data: {{ jsonrpc: '2.0', id: msg.id, result }}
+        }})));
+      }}
+    }}
+  }}
+}};
+
+(async () => {{
+  eval({json.dumps(app_js)});
+  await new Promise(r => setTimeout(r, 30));
+  assert.ok(postedToHost.some(m => m.method === 'ui/initialize'));
+  assert.ok(postedToHost.some(m => m.method === 'ui/notifications/initialized'));
+  assert.strictEqual(document.documentElement.dataset.theme, 'dark');
+  assert.strictEqual(document.documentElement.style.vars['--color-background-primary'], '#111');
+
+  // Deliver tool-result from host
+  listeners.forEach(fn => fn({{ data: {{ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: startRes }} }}));
+  assert.ok(elements.get('hdr-subject').textContent.includes('synthetic-p3'));
+  assert.strictEqual(elements.get('hdr-status').textContent, 'needs_pre_submit_review');
+  assert.strictEqual(elements.get('btn-submit').disabled, false);
+
+  // Uncertain submit must reflect execution_uncertain instead of faking success
+  submitMode = 'uncertain';
+  await elements.get('btn-submit').listeners.click();
+  assert.strictEqual(elements.get('hdr-status').textContent, 'execution_uncertain');
+  assert.ok(elements.get('action-feedback').textContent.includes('execution_uncertain'));
+  assert.strictEqual(elements.get('btn-reconcile').disabled, false);
+
+  // Re-deliver normal start and submit -> readback evidence rendered -> accept
+  listeners.forEach(fn => fn({{ data: {{ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: startRes }} }}));
+  submitMode = 'normal';
+  await elements.get('btn-submit').listeners.click();
+  assert.strictEqual(elements.get('hdr-status').textContent, 'needs_clinician_acceptance');
+  assert.ok(elements.get('readback-summary').textContent.includes('一致'));
+  assert.ok(elements.get('readback-body').textContent.includes('readback_visible_payload'));
+
+  await elements.get('btn-accept').listeners.click();
+  assert.strictEqual(elements.get('hdr-status').textContent, 'accepted');
+  console.log('HOST_SIM_OK');
+}})().catch(err => {{ console.error(err); process.exit(1); }});
+""", encoding="utf-8")
+            proc = subprocess.run([node_bin, str(harness)], capture_output=True, text=True, check=False)
+            self.assertEqual(proc.returncode, 0, msg=f"stderr={proc.stderr}\nstdout={proc.stdout}")
+            self.assertIn("HOST_SIM_OK", proc.stdout)

@@ -70,10 +70,15 @@ def apply_retention(
         if not resolved.is_relative_to(root):
             raise ValueError(f"path escapes evidence directory: {candidate}")
 
-        suffix = resolved.suffix.lower()
-        if suffix in policy.screenshot_extensions:
+        suffixes = [s.lower() for s in resolved.suffixes]
+        is_encrypted_shot = (
+            len(suffixes) >= 2
+            and suffixes[-1] == ".enc"
+            and suffixes[-2] in policy.screenshot_extensions
+        )
+        if suffixes and (suffixes[-1] in policy.screenshot_extensions or is_encrypted_shot):
             cutoff = shot_cutoff
-        elif suffix in policy.log_extensions:
+        elif suffixes and suffixes[-1] in policy.log_extensions:
             cutoff = log_cutoff
         else:
             continue

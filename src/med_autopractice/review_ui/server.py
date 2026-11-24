@@ -144,6 +144,8 @@ class LocalReviewServer:
                             generator_ref=body.get("generator_ref"),
                             knowledge_refs=body.get("knowledge_refs"),
                         )
+                    elif action == "reconcile":
+                        view = parent.runtime.reconcile(task_id)
                     elif action == "cancel":
                         view = parent.runtime.cancel(
                             task_id,

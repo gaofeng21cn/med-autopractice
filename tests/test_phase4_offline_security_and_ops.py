@@ -14,10 +14,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
+from med_autopractice.adapters.drivers.desktop_win import WindowsUIADriver  # noqa: E402
 from med_autopractice.adapters.playbook_runner import ScreenObservation  # noqa: E402
 from med_autopractice.adapters.session_guard import ClinicalSessionGuard, SessionLockedError  # noqa: E402
 from med_autopractice.agent.task_engine import JsonlAuditSink  # noqa: E402
 from med_autopractice.agent.task_store import SyntheticSqliteTaskStore  # noqa: E402
+from med_autopractice.deployment import build_site_runtime  # noqa: E402
 from med_autopractice.domain.task import ClinicianApproval, SubjectRef, TaskRequest  # noqa: E402
 from med_autopractice.runtime import build_synthetic_runtime  # noqa: E402
 from med_autopractice.storage.crypto import EnvKeyProvider, EvidenceCipher, FileKeyProvider  # noqa: E402
@@ -72,6 +74,38 @@ class Phase4OfflineSecurityAndOpsTests(unittest.TestCase):
                 "--output", str(ROOT / "tmp_bad_bundle"),
             ], capture_output=True, text=True)
             self.assertNotEqual(in_repo.returncode, 0)
+
+            # Refuse overwriting existing directory without --force
+            no_force = subprocess.run([
+                sys.executable, str(ROOT / "scripts/build_offline_bundle.py"),
+                "--output", str(bundle_dir),
+            ], capture_output=True, text=True)
+            self.assertNotEqual(no_force.returncode, 0)
+            self.assertTrue((bundle_dir / "bundle-manifest.json").is_file())
+
+            # Refuse overwriting a non-bundle directory even with --force
+            plain_dir = tmp_dir / "plain-existing-dir"
+            plain_dir.mkdir()
+            marker = plain_dir / "keep-me.txt"
+            marker.write_text("important-user-data", encoding="utf-8")
+            bad_force = subprocess.run([
+                sys.executable, str(ROOT / "scripts/build_offline_bundle.py"),
+                "--output", str(plain_dir), "--force",
+            ], capture_output=True, text=True)
+            self.assertNotEqual(bad_force.returncode, 0)
+            self.assertEqual(marker.read_text(encoding="utf-8"), "important-user-data")
+
+            # Allow --force replacement of an existing MAP bundle directory and verify it
+            forced = subprocess.run([
+                sys.executable, str(ROOT / "scripts/build_offline_bundle.py"),
+                "--output", str(bundle_dir), "--force",
+            ], capture_output=True, text=True, check=True)
+            self.assertEqual(json.loads(forced.stdout)["bundle_dir"], str(bundle_dir.resolve()))
+            reverified = subprocess.run([
+                sys.executable, str(ROOT / "scripts/build_offline_bundle.py"),
+                "--verify", str(bundle_dir),
+            ], capture_output=True, text=True, check=True)
+            self.assertTrue(json.loads(reverified.stdout)["valid"])
 
     def test_evidence_cipher_key_providers_and_tamper_resistance(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -131,9 +165,10 @@ class Phase4OfflineSecurityAndOpsTests(unittest.TestCase):
             ev_dir = Path(tmp) / "evidence"
             ev_dir.mkdir()
             old_shot = ev_dir / "old.png"
+            old_enc_shot = ev_dir / "old_encrypted.png.enc"
             fresh_shot = ev_dir / "fresh.png"
             old_log = ev_dir / "old.jsonl"
-            for f in (old_shot, fresh_shot, old_log):
+            for f in (old_shot, old_enc_shot, fresh_shot, old_log):
                 f.write_bytes(b"12345")
 
             from datetime import datetime, timezone
@@ -142,16 +177,19 @@ class Phase4OfflineSecurityAndOpsTests(unittest.TestCase):
             old_ts = (now.timestamp() - 40 * 86400)
             fresh_ts = (now.timestamp() - 5 * 86400)
             os.utime(old_shot, (old_ts, old_ts))
+            os.utime(old_enc_shot, (old_ts, old_ts))
             os.utime(fresh_shot, (fresh_ts, fresh_ts))
             os.utime(old_log, (old_ts, old_ts))  # 40d < 90d log retention -> must stay!
 
             dry = apply_retention(ev_dir, RetentionPolicy(screenshot_max_age_days=30, task_log_max_age_days=90, dry_run=True), now=now)
-            self.assertEqual((dry.deleted, dry.kept), (1, 2))
+            self.assertEqual((dry.deleted, dry.kept), (2, 2))
             self.assertTrue(old_shot.exists())
+            self.assertTrue(old_enc_shot.exists())
 
             applied = apply_retention(ev_dir, RetentionPolicy(screenshot_max_age_days=30, task_log_max_age_days=90, dry_run=False), now=now)
-            self.assertEqual((applied.deleted, applied.kept), (1, 2))
+            self.assertEqual((applied.deleted, applied.kept), (2, 2))
             self.assertFalse(old_shot.exists())
+            self.assertFalse(old_enc_shot.exists())
             self.assertTrue(fresh_shot.exists())
             self.assertTrue(old_log.exists())
 
@@ -214,3 +252,88 @@ class Phase4OfflineSecurityAndOpsTests(unittest.TestCase):
             self.assertEqual(metrics["cancel_rate"], 0.5)
             self.assertNotIn("synthetic-secret-pat-123", proc.stdout)
             self.assertNotIn("synthetic-secret-enc-456", proc.stdout)
+
+    def test_site_runtime_wires_encrypted_evidence_retention_cli_and_session_guard(self):
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from examples.sandbox_his.sandbox_engine import SyntheticHISSandbox
+        from tests.test_phase1_declarative_drivers import _create_declarative_site
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            site = _create_declarative_site(tmp_dir / "secured")
+            key_file = tmp_dir / "site-evidence.key"
+            key_file.write_bytes(b"synthetic-32-byte-aes-master-key")
+            key_file.chmod(0o600)
+
+            dep_path = site / "deployment.json"
+            dep = json.loads(dep_path.read_text(encoding="utf-8"))
+            dep["evidence_security"] = {
+                "encryption": {"mode": "required", "key_file": str(key_file), "prefer_aesgcm": False},
+                "retention": {"screenshot_max_age_days": 7, "task_log_max_age_days": 30},
+            }
+            dep_path.write_text(json.dumps(dep, ensure_ascii=False, indent=2), encoding="utf-8")
+
+            sandbox = SyntheticHISSandbox()
+            driver = WindowsUIADriver(backend=sandbox, screenshot_dir=site / "evidence")
+            runtime = build_site_runtime(site, driver=driver)
+            subj = SubjectRef("demo-local", "synthetic-p01", "synthetic-e01")
+
+            started = runtime.start(TaskRequest(
+                "req-sec-1", "write_inpatient_notes", "安全写病程",
+                subj, "demo://grant", inputs={"sections": {"观察": "患者平稳"}},
+            ))
+            approval = ClinicianApproval(
+                started["task_id"], "demo-clinician",
+                started["proposal"]["digest"], started["snapshot"]["revision"],
+            )
+            submitted = runtime.submit(started["task_id"], approval)
+            self.assertEqual(submitted["status"], "needs_clinician_acceptance")
+
+            shot_ref = submitted["execution"]["readback"]["screenshot_ref"]
+            self.assertTrue(shot_ref.endswith(".png.enc"))
+            self.assertTrue(Path(shot_ref).is_file())
+            self.assertFalse(list((site / "evidence").glob("*.png")))  # No plaintext PNG left on disk
+            cipher = EvidenceCipher(FileKeyProvider(key_file), prefer_aesgcm=False)
+            decrypted = cipher.decrypt_bytes(Path(shot_ref).read_bytes(), aad=b"demo-local")
+            self.assertTrue(decrypted.startswith(b"\x89PNG"))
+
+            # Retention CLI cleans expired .png.enc screenshots (>7 days)
+            from datetime import datetime, timezone
+
+            stale_ts = datetime.now(timezone.utc).timestamp() - 10 * 86400
+            for enc in (site / "evidence").glob("*.png.enc"):
+                os.utime(enc, (stale_ts, stale_ts))
+            ret_dry = subprocess.run([
+                sys.executable, str(ROOT / "scripts/map_runtime.py"),
+                "retention", "--site", str(site), "--dry-run",
+            ], capture_output=True, text=True, check=True)
+            self.assertGreaterEqual(json.loads(ret_dry.stdout)["deleted"], 1)
+            self.assertTrue(Path(shot_ref).is_file())
+
+            ret_apply = subprocess.run([
+                sys.executable, str(ROOT / "scripts/map_runtime.py"),
+                "retention", "--site", str(site),
+            ], capture_output=True, text=True, check=True)
+            self.assertGreaterEqual(json.loads(ret_apply.stdout)["deleted"], 1)
+            self.assertFalse(Path(shot_ref).exists())
+
+            # Session guard detects locked screen and blocks writes until clinician relogin
+            task2 = runtime.start(TaskRequest(
+                "req-sec-2", "write_inpatient_notes", "锁屏拦截测试",
+                subj, "demo://grant", inputs={"sections": {"观察": "锁屏前草稿"}},
+            ))
+            sandbox.session_locked = True
+            with self.assertRaises(SessionLockedError):
+                runtime.submit(task2["task_id"], ClinicianApproval(
+                    task2["task_id"], "demo-clinician",
+                    task2["proposal"]["digest"], task2["snapshot"]["revision"],
+                ))
+            self.assertEqual(runtime.session_guard.state, "paused_reauth_required")
+            with self.assertRaises(SessionLockedError):
+                runtime.session_guard.assert_can_write()
+
+            # Clinician relogin clears lock and restores active writes
+            sandbox.session_locked = False
+            runtime.session_guard.confirm_reauthenticated(driver.observe(), subject=subj)
+            self.assertEqual(runtime.session_guard.state, "active")

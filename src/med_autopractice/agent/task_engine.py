@@ -224,7 +224,8 @@ class TaskEngine:
             task.snapshot = snapshot
             self._event(task, "read_context", "observed", snapshot.trace_refs)
             covered = {item.scope for item in snapshot.coverage if item.complete}
-            if self.authorize is not None and not set(policy.required_scopes) <= covered:
+            missing_scopes = set(policy.required_scopes) - covered
+            if missing_scopes and not policy.allow_partial_draft and self.authorize is not None:
                 task.status = "needs_information"
                 self._event(task, "prepare_proposal", task.status)
                 return task
@@ -232,15 +233,22 @@ class TaskEngine:
             self._check_proposal(task, proposal)
             task.proposal = proposal
             task.prepared_digest = proposal.digest
-            if not set(policy.required_scopes) <= covered:
-                task.status = "needs_information"
+            if missing_scopes:
+                if policy.allow_partial_draft:
+                    task.status = "draft_only"
+                    self._event(task, "prepare_proposal", "draft_only", (proposal.digest, "partial_sources"))
+                else:
+                    task.status = "needs_information"
+                    self._event(task, "prepare_proposal", task.status, (proposal.digest,))
             elif policy.expected_system_state is None:
                 task.status = "review_result"
+                self._event(task, "prepare_proposal", task.status, (proposal.digest,))
             elif not self.system.can_apply(proposal):
                 task.status = "draft_only"
+                self._event(task, "prepare_proposal", task.status, (proposal.digest,))
             else:
                 task.status = "needs_pre_submit_review" if policy.requires_pre_submit_review else "ready_to_submit"
-            self._event(task, "prepare_proposal", task.status, (proposal.digest,))
+                self._event(task, "prepare_proposal", task.status, (proposal.digest,))
         except WorkflowInputRequired as error:
             task.status = "needs_input"
             task.required_input = error.fields

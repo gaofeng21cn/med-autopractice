@@ -1,6 +1,6 @@
 """Construct reviewable notes and order changes from sourced facts and clinician input."""
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any
 
@@ -27,7 +27,14 @@ def facts_of(facts: tuple[Fact, ...], kind: str) -> list[Fact]:
     return [fact for fact in facts if fact.status in OBSERVED and fact.details.get("kind") == kind]
 
 
-def make_note(inputs: dict, facts: tuple[Fact, ...], rule: Mapping, authority: str) -> dict:
+def make_note(
+    inputs: dict,
+    facts: tuple[Fact, ...],
+    rule: Mapping,
+    authority: str,
+    *,
+    missing_scopes: Sequence[str] = (),
+) -> dict:
     sections = rule.get("sections")
     if not isinstance(sections, list) or not sections or any(not isinstance(n, str) or not n.strip() for n in sections):
         raise ValueError("document rule needs ordered section names")
@@ -36,6 +43,7 @@ def make_note(inputs: dict, facts: tuple[Fact, ...], rule: Mapping, authority: s
     entries = inputs.get("sections", {})
     if not isinstance(entries, dict) or set(entries) - set(sections):
         raise ValueError("clinician input contains undefined note sections")
+    missing_list = [str(s) for s in missing_scopes if str(s).strip()]
     result = []
     for section in sections:
         evidence = [fact for fact in facts if fact.details.get("section") == section and fact.status in OBSERVED]
@@ -43,9 +51,20 @@ def make_note(inputs: dict, facts: tuple[Fact, ...], rule: Mapping, authority: s
         if section in entries:
             lines.append({"text": text(entries[section], "section text"), "source_ref": authority})
         if not lines:
-            raise WorkflowInputRequired(f"sections.{section}")
+            if missing_list:
+                lines.append({
+                    "text": f"[资料缺失：未获取 {', '.join(missing_list)}，待医生核实补充]",
+                    "source_ref": "map://missing-information",
+                    "status": "missing_source",
+                })
+            else:
+                raise WorkflowInputRequired(f"sections.{section}")
         result.append({"section": section, "entries": lines})
-    return {"type": "note_draft", "sections": result}
+    payload: dict[str, Any] = {"type": "note_draft", "sections": result}
+    if missing_list:
+        payload["partial_draft"] = True
+        payload["missing_scopes"] = missing_list
+    return payload
 
 
 def make_orders(inputs: dict, facts: tuple[Fact, ...], rule: Mapping, *, group: bool = False) -> dict:

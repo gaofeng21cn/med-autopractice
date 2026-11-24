@@ -249,7 +249,7 @@ class PartialDeploymentAndLifecycleTests(unittest.TestCase):
         self.assertEqual(strict_run.returncode, 0)
         self.assertEqual(json.loads(strict_run.stdout)["status"], "blocked")
 
-        # Enable partial_draft_allowed -> preserves partial snapshot and waits in needs_information.
+        # Enable partial_draft_allowed -> preserves partial snapshot and produces draft_only note with missing markers.
         deploy_path = self.site / "deployment.json"
         deploy = json.loads(deploy_path.read_text(encoding="utf-8"))
         deploy["read_mode"] = "partial_draft_allowed"
@@ -266,10 +266,36 @@ class PartialDeploymentAndLifecycleTests(unittest.TestCase):
             capture_output=True, text=True, check=True,
         )
         view = json.loads(partial_run.stdout)
-        self.assertEqual(view["status"], "needs_information")
+        self.assertEqual(view["status"], "draft_only")
         self.assertIn("nursing", view["missing_information"])
         self.assertTrue(view["snapshot"]["facts"])
         self.assertIn(":partial:", view["snapshot"]["revision"])
+        self.assertIsNotNone(view["proposal"])
+        self.assertTrue(view["proposal"]["payload"]["partial_draft"])
+        self.assertEqual(view["proposal"]["payload"]["missing_scopes"], ["nursing"])
+
+        # Submit MUST stay strictly blocked for partial draft_only notes.
+        blocked_submit = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/map_runtime.py"), "submit", "--site", str(self.site),
+             "--task-id", view["task_id"], "--clinician", "demo-clinician",
+             "--digest", view["proposal"]["digest"], "--revision", view["snapshot"]["revision"]],
+            capture_output=True, text=True,
+        )
+        self.assertNotEqual(blocked_submit.returncode, 0)
+
+        # Orders under partial_draft_allowed still stop at needs_information with no proposal.
+        ord_req_path = self.site / "revise_orders_partial.json"
+        ord_req = json.loads((self.site / "revise_orders.json").read_text(encoding="utf-8"))
+        ord_req["request_id"] = "demo-partial-order"
+        ord_req_path.write_text(json.dumps(ord_req, ensure_ascii=False, indent=2), encoding="utf-8")
+        partial_order = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/map_runtime.py"), "start", "--site", str(self.site),
+             "--request", str(ord_req_path)],
+            capture_output=True, text=True, check=True,
+        )
+        order_view = json.loads(partial_order.stdout)
+        self.assertEqual(order_view["status"], "needs_information")
+        self.assertIsNone(order_view["proposal"])
 
         listed = subprocess.run(
             [sys.executable, str(ROOT / "scripts/map_runtime.py"), "list", "--site", str(self.site),
@@ -277,7 +303,7 @@ class PartialDeploymentAndLifecycleTests(unittest.TestCase):
             capture_output=True, text=True, check=True,
         )
         tasks = json.loads(listed.stdout)["tasks"]
-        self.assertEqual(len(tasks), 2)
+        self.assertEqual(len(tasks), 3)
 
         cancelled = subprocess.run(
             [sys.executable, str(ROOT / "scripts/map_runtime.py"), "cancel", "--site", str(self.site),

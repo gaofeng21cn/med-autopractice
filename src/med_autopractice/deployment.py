@@ -1,5 +1,6 @@
 """Compose a site-owned connector with the installed MAP task runtime."""
 
+from collections.abc import Mapping
 from dataclasses import replace
 from hashlib import sha256
 import json
@@ -9,7 +10,9 @@ from types import ModuleType
 
 from med_autopractice.adapters.composite import _DEPENDENCY_SCOPE_HINTS
 from med_autopractice.adapters.declarative_ui import DeclarativeHospitalUI
+from med_autopractice.adapters.playbook_runner import PlaybookRunner
 from med_autopractice.adapters.ports import SiteProvider
+from med_autopractice.adapters.session_guard import ClinicalSessionGuard, DEFAULT_LOCK_KEYWORDS
 from med_autopractice.adapters.ui import UIClinicalSystem, UIProfile
 from med_autopractice.agent.task_engine import TaskEngine
 from med_autopractice.agent.task_store import SqliteTaskStore
@@ -17,6 +20,12 @@ from med_autopractice.domain.task import Proposal, Snapshot, SourceCoverage, Tas
 from med_autopractice.medicine.proposals import NOTES, ORDERS, make_note, make_orders, text
 from med_autopractice.platform.security import verify_private_directory, verify_private_file
 from med_autopractice.runtime import TaskRuntime
+from med_autopractice.storage.evidence_store import (
+    ManagedEvidenceDriver,
+    build_evidence_cipher,
+    retention_policy_from_config,
+)
+from med_autopractice.storage.retention import RetentionReport, apply_retention
 from med_autopractice.workflows.catalog import LOCAL_WORKFLOWS
 from med_autopractice.workflows import results
 from med_autopractice.workflows.site_plan import SiteCatalog
@@ -33,7 +42,12 @@ class SiteKnowledge:
         capability = request.capability_id
         rule = self.rules.get(capability, {})
         if capability in NOTES:
-            body = make_note(request.inputs, snapshot.facts, rule, request.authority_ref)
+            covered = {item.scope for item in snapshot.coverage if item.complete}
+            missing = tuple(s for s in LOCAL_WORKFLOWS[capability].required_scopes if s not in covered)
+            body = make_note(
+                request.inputs, snapshot.facts, rule, request.authority_ref,
+                missing_scopes=missing,
+            )
         elif capability in ORDERS or capability == "maintain_order_sets":
             body = make_orders(request.inputs, snapshot.facts, rule, group=capability == "maintain_order_sets")
         elif capability == "collect_history":
@@ -133,10 +147,17 @@ def _private_file(path: Path) -> bytes:
 class _DeclarativeSiteProvider:
     """Adapter bridge allowing sites without custom provider.py to run via Playbooks."""
 
-    def __init__(self, ui_system: UIClinicalSystem, config: dict):
+    def __init__(
+        self,
+        ui_system: UIClinicalSystem,
+        config: dict,
+        *,
+        session_guard: ClinicalSessionGuard | None = None,
+    ):
         self.ui_system = ui_system
         self.allowed_authority = config.get("authority_ref")
         self.clinicians = set(config.get("authorized_clinicians", ()))
+        self.session_guard = session_guard
 
     def authorize(self, action, request, decision):
         if request.subject.site_id != self.ui_system.ui.profile.site_id:
@@ -158,6 +179,8 @@ class _DeclarativeSiteProvider:
     def apply_bound(self, request, proposal, revision, idempotency_key, existing_object_ref, approval):
         if not self.authorize("submit", request, approval):
             raise PermissionError("clinician authorization required")
+        if self.session_guard is not None:
+            self.session_guard.assert_can_write()
         return self.ui_system.apply(proposal, idempotency_key, existing_object_ref)
 
     def read_back(self, receipt, task):
@@ -182,6 +205,28 @@ def _build_driver(driver_cfg: dict, evidence_dir: Path):
 
         return KVMUIDriver.from_config(driver_cfg, screenshot_dir=evidence_dir)
     raise ValueError(f"unsupported declarative driver kind: {kind!r}")
+
+
+def _build_session_guard(config: Mapping) -> ClinicalSessionGuard | None:
+    guard_cfg = config.get("session_guard")
+    if isinstance(guard_cfg, Mapping) and guard_cfg.get("enabled") is False:
+        return None
+    keywords = DEFAULT_LOCK_KEYWORDS
+    if isinstance(guard_cfg, Mapping) and guard_cfg.get("lock_keywords"):
+        keywords = tuple(str(k) for k in guard_cfg["lock_keywords"] if str(k).strip())
+    return ClinicalSessionGuard(lock_keywords=keywords)
+
+
+def apply_site_retention(directory: Path, *, dry_run: bool = False) -> RetentionReport:
+    """Apply configured evidence retention policy on a private site deployment directory."""
+    directory = _private_directory(directory)
+    config = json.loads(_private_file(directory / "deployment.json"))
+    if not isinstance(config, dict) or config.get("schema_version") != "map-local-deployment.v1":
+        raise ValueError("unsupported local deployment descriptor")
+    evidence_dir = directory / "evidence"
+    evidence_dir.mkdir(exist_ok=True, mode=0o700)
+    policy = retention_policy_from_config(config.get("evidence_security"), dry_run=dry_run)
+    return apply_retention(evidence_dir, policy)
 
 
 def build_site_runtime(
@@ -212,6 +257,7 @@ def build_site_runtime(
         for pfile in sorted((directory / "playbooks").glob("*.json")):
             playbook_hashes.append(_private_file(pfile))
     revision = sha256(b"\x00".join((config_bytes, profile_bytes, provider_bytes, *playbook_hashes))).hexdigest()
+    read_mode = config.get("read_mode", "strict")
     policies = {}
     for capability, state in capabilities.items():
         workflow = LOCAL_WORKFLOWS.get(capability)
@@ -233,7 +279,17 @@ def build_site_runtime(
             policy = TaskPolicy(capability, False, None, workflow.required_scopes)
         if workflow.write_dependency:
             policy = replace(policy, requires_pre_submit_review=True)
+        if read_mode == "partial_draft_allowed" and capability in NOTES:
+            policy = replace(policy, allow_partial_draft=True)
         policies[capability] = replace(policy, deployment_revision=revision)
+
+    security_cfg = config.get("evidence_security")
+    cipher = build_evidence_cipher(security_cfg, directory, repo_root=ROOT)
+    session_guard = _build_session_guard(config)
+    evidence_dir = directory / "evidence"
+    if isinstance(security_cfg, Mapping) and (security_cfg.get("retention") or {}).get("apply_on_startup"):
+        evidence_dir.mkdir(exist_ok=True, mode=0o700)
+        apply_retention(evidence_dir, retention_policy_from_config(security_cfg))
 
     if has_provider:
         module_name = f"_map_site_provider_{revision}"
@@ -270,17 +326,21 @@ def build_site_runtime(
             write_capabilities=frozenset(ui_cfg.get("write_capabilities", ())),
             long_text_qualified=bool(ui_cfg.get("long_text_qualified", False)),
         )
-        evidence_dir = directory / "evidence"
-        evidence_dir.mkdir(exist_ok=True)
-        active_driver = driver if driver is not None else _build_driver(driver_cfg, evidence_dir)
-        ui = DeclarativeHospitalUI(profile, active_driver, loaded_books, bindings)
-        provider = _DeclarativeSiteProvider(UIClinicalSystem(ui), config)
+        evidence_dir.mkdir(exist_ok=True, mode=0o700)
+        raw_driver = driver if driver is not None else _build_driver(driver_cfg, evidence_dir)
+        active_driver = (
+            ManagedEvidenceDriver(raw_driver, evidence_dir, cipher=cipher, site_id=site_id)
+            if cipher is not None
+            else raw_driver
+        )
+        runner = PlaybookRunner(active_driver, session_guard=session_guard)
+        ui = DeclarativeHospitalUI(profile, active_driver, loaded_books, bindings, runner=runner)
+        provider = _DeclarativeSiteProvider(UIClinicalSystem(ui), config, session_guard=session_guard)
 
-    read_mode = config.get("read_mode", "strict")
     system = QualifiedSystem(provider, catalog, read_mode=read_mode)
     store = SqliteTaskStore(directory / "tasks.sqlite", site_id=site_id)
     engine = TaskEngine(
         SiteKnowledge(rules), system, None, policies, store,
         authorize=provider.authorize, apply_bound=system.apply_bound,
     )
-    return TaskRuntime(engine, LOCAL_WORKFLOWS)
+    return TaskRuntime(engine, LOCAL_WORKFLOWS, session_guard=session_guard)

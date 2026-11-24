@@ -27,10 +27,10 @@ from med_autopractice.adapters.drivers.text_entry import (
     ChineseEntryUnqualifiedError, ClipboardRelayStrategy, DraftOnlyFallbackStrategy,
     PureHIDSegmentedStrategy,
 )
-from med_autopractice.adapters.playbook_runner import HumanInterruptError
-from med_autopractice.adapters.ui import UIClinicalSystem, UIProfile
+from med_autopractice.adapters.playbook_runner import HumanInterruptError, PlaybookRunner, ScreenObservation
+from med_autopractice.adapters.ui import UIClinicalSystem, UIProfile, UIStateError
 from med_autopractice.deployment import build_site_runtime
-from med_autopractice.domain.task import ClinicianApproval, SubjectRef, TaskRequest
+from med_autopractice.domain.task import ClinicianApproval, Proposal, SubjectRef, Task, TaskPolicy, TaskRequest
 from med_autopractice.workflows.site_playbook import SitePlaybook
 from med_autopractice.workflows.site_sync import inspect_and_sync_site_pack
 
@@ -175,6 +175,30 @@ def _create_declarative_site(root: Path, *, long_text_qualified: bool = True) ->
                 "evidence": "screenshot_ref",
                 "state": "verified",
             },
+            {
+                "id": "read_saved_ref",
+                "intent": "读取系统生成的草稿对象引用",
+                "primitive": "read_text",
+                "selector": "#object-ref",
+                "region_hint": [315, 448, 560, 480],
+                "extract_key": "object_ref",
+                "expect_text": "demo://",
+                "effect": "read_only",
+                "on_failure": "stop",
+                "state": "verified",
+            },
+            {
+                "id": "read_saved_state",
+                "intent": "读取草稿保存状态",
+                "primitive": "read_text",
+                "selector": "#object-state",
+                "region_hint": [315, 415, 410, 448],
+                "extract_key": "state",
+                "expect_text": "已保存",
+                "effect": "read_only",
+                "on_failure": "stop",
+                "state": "verified",
+            },
         ],
     }
     readback_book = {
@@ -189,6 +213,30 @@ def _create_declarative_site(root: Path, *, long_text_qualified: bool = True) ->
                 "intent": "回读前核对患者身份",
                 "primitive": "verify_subject",
                 "expect_text": "住院病历工作站",
+                "effect": "read_only",
+                "on_failure": "stop",
+                "state": "verified",
+            },
+            {
+                "id": "read_object_ref",
+                "intent": "回读对象唯一引用",
+                "primitive": "read_text",
+                "selector": "#object-ref",
+                "region_hint": [315, 448, 560, 480],
+                "extract_key": "object_ref",
+                "expect_text": "demo://",
+                "effect": "read_only",
+                "on_failure": "stop",
+                "state": "verified",
+            },
+            {
+                "id": "read_object_state",
+                "intent": "回读对象状态",
+                "primitive": "read_text",
+                "selector": "#object-state",
+                "region_hint": [315, 415, 410, 448],
+                "extract_key": "state",
+                "expect_text": "已保存",
                 "effect": "read_only",
                 "on_failure": "stop",
                 "state": "verified",
@@ -237,6 +285,7 @@ def _create_declarative_site(root: Path, *, long_text_qualified: bool = True) ->
                 "readback": "readback-note-draft",
                 "default_section": "观察",
                 "extra_complete_scopes": ["patient_context", "current_orders", "nursing"],
+                "state_map": {"已保存": "saved_draft", "已录入": "entered"},
             }
         },
         "capabilities": {"write_inpatient_notes": "saved_draft"},
@@ -341,7 +390,7 @@ class DeclarativeSiteAndDriversTests(unittest.TestCase):
                 screenshot_dir=site / "evidence",
                 expected_size=(1280, 720),
                 long_text_qualified=True,
-                text_strategy=PureHIDSegmentedStrategy(max_segment_chars=30, max_retries=2),
+                text_strategy=PureHIDSegmentedStrategy(max_segment_chars=30, max_retries=2, allow_unicode_hid=True),
             )
             runtime = build_site_runtime(site, driver=driver)
             req = TaskRequest(
@@ -440,6 +489,274 @@ class DeclarativeSiteAndDriversTests(unittest.TestCase):
             receipt.write_text('{"runtime": ".", "profile": "demo"}', encoding="utf-8")
             with patch.dict(os.environ, {"GLKVM_INSTALLATION": str(receipt)}):
                 self.assertEqual(GLKVMNativeTransport.discover_receipt(), receipt)
+
+    def test_declarative_fail_closed_subject_ref_state_and_order_table_readback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            site = _create_declarative_site(tmp_dir / "failclosed")
+            books = {b.playbook_id: b for b in SitePlaybook.load_directory(site / "playbooks")}
+
+            # 1. verify_subject rejects ambiguous patient tokens and substring collisions
+            sandbox = SyntheticHISSandbox()
+            driver = WindowsUIADriver(backend=sandbox, screenshot_dir=site / "evidence")
+            ambiguous_book = SitePlaybook({
+                "schema_version": "map-site-playbook.v2",
+                "playbook_id": "verify-only",
+                "site_id": "demo-local",
+                "title": "核验身份",
+                "systems": ["inpatient_ehr"],
+                "steps": [{
+                    "id": "v", "intent": "verify", "primitive": "verify_subject",
+                    "expect_text": "*", "effect": "read_only", "on_failure": "stop", "state": "verified",
+                }],
+            }).playbook
+            with patch.object(
+                driver, "observe",
+                return_value=ScreenObservation("f1", "患者:synthetic-p01 患者:synthetic-p02 就诊:synthetic-e01", "2026-01-01T00:00:00Z"),
+            ):
+                with self.assertRaises(UIStateError):
+                    PlaybookRunner(driver).run(ambiguous_book, SUBJECT)
+            with patch.object(
+                driver, "observe",
+                return_value=ScreenObservation("f2", "synthetic-p01-WRONG synthetic-e01", "2026-01-01T00:00:00Z"),
+            ):
+                with self.assertRaises(UIStateError):
+                    PlaybookRunner(driver).run(ambiguous_book, SUBJECT)
+
+            # 2. Missing object_ref or state in write/readback playbooks fails closed (no fake fallback)
+            write_no_ref = SitePlaybook({
+                "schema_version": "map-site-playbook.v2",
+                "playbook_id": "write-no-ref",
+                "site_id": "demo-local",
+                "title": "无对象引用写入",
+                "systems": ["inpatient_ehr"],
+                "steps": [
+                    {"id": "v", "intent": "verify", "primitive": "verify_subject",
+                     "expect_text": "*", "effect": "read_only", "on_failure": "stop", "state": "verified"},
+                    {"id": "s", "intent": "save", "primitive": "click", "selector": "#save-draft",
+                     "expect_text": "已保存", "effect": "draft_write", "on_failure": "stop", "state": "verified"},
+                ],
+            }).playbook
+            readback_no_state = SitePlaybook({
+                "schema_version": "map-site-playbook.v2",
+                "playbook_id": "readback-no-state",
+                "site_id": "demo-local",
+                "title": "缺状态回读",
+                "systems": ["inpatient_ehr"],
+                "steps": [
+                    {"id": "ref", "intent": "read ref", "primitive": "read_text", "selector": "#object-ref",
+                     "extract_key": "object_ref", "expect_text": "demo://", "effect": "read_only", "on_failure": "stop", "state": "verified"},
+                    {"id": "txt", "intent": "read txt", "primitive": "read_text", "selector": "#note-editor",
+                     "extract_key": "draft_text", "expect_text": "*", "effect": "read_only", "on_failure": "stop",
+                     "evidence": "screenshot_ref", "state": "verified"},
+                ],
+            }).playbook
+            books_fc = {**books, "write-no-ref": write_no_ref, "readback-no-state": readback_no_state}
+            profile = UIProfile("demo-local", "synthetic-his", "2.0", "clinician", (1280, 720), "demo://q", frozenset({"write_inpatient_notes", "revise_orders"}), True)
+            ui_fc = DeclarativeHospitalUI(profile, driver, books_fc, {
+                "write_inpatient_notes": {
+                    "write": "write-no-ref",
+                    "readback": "readback-no-state",
+                }
+            })
+            prop_note = Proposal(SUBJECT, "write_inpatient_notes", {"draft": "患者平稳"}, ("lab-1",), "demo://gen")
+            with self.assertRaises(UIStateError):
+                ui_fc.write(prop_note, None)
+
+            # Even open_object never synthesizes missing subject/state
+            sandbox.last_object_ref = "demo://his/note/99"
+            sandbox.editor_text = "患者平稳"
+            vis = ui_fc.open_object(SUBJECT, "write_inpatient_notes", "demo://his/note/99")
+            self.assertEqual(vis.state, "")
+            self.assertEqual(vis.subject.patient_id, "__unverified__")
+            rb_fc = UIClinicalSystem(ui_fc).read_back(
+                UIClinicalSystem(DeclarativeHospitalUI(profile, driver, books, {
+                    "write_inpatient_notes": {
+                        "write": "write-note-draft", "readback": "readback-note-draft",
+                        "state_map": {"已保存": "saved_draft"},
+                    }
+                })).apply(prop_note, "idem-fc", None),
+                Task("t-fc", TaskRequest("r-fc", "write_inpatient_notes", "note", SUBJECT, "demo://grant"), "execution_uncertain", proposal=prop_note),
+            )
+            self.assertEqual(rb_fc.proposal_digest, "")
+
+            # 3. Declarative order changes table reconstruction: full match vs partial failure
+            order_write_book = SitePlaybook({
+                "schema_version": "map-site-playbook.v2",
+                "playbook_id": "write-orders",
+                "site_id": "demo-local",
+                "title": "录入医嘱变更",
+                "systems": ["inpatient_ehr"],
+                "steps": [
+                    {"id": "v", "intent": "verify", "primitive": "verify_subject", "selector": "#patient-header",
+                     "expect_text": "患者", "effect": "read_only", "on_failure": "stop", "state": "verified"},
+                    {"id": "in", "intent": "input orders", "primitive": "input_text", "selector": "#orders-editor",
+                     "target": "医嘱编辑器", "text_param": "changes_json", "expect_text": "*",
+                     "effect": "reviewed_write", "on_failure": "stop", "state": "verified"},
+                    {"id": "sub", "intent": "submit orders", "primitive": "click", "selector": "#submit-orders",
+                     "target": "提交医嘱", "expect_text": "已录入", "effect": "reviewed_write",
+                     "on_failure": "stop", "evidence": "screenshot_ref", "state": "verified"},
+                    {"id": "ref", "intent": "read ref", "primitive": "read_text", "selector": "#object-ref",
+                     "extract_key": "object_ref", "expect_text": "demo://", "effect": "read_only", "on_failure": "stop", "state": "verified"},
+                    {"id": "st", "intent": "read state", "primitive": "read_text", "selector": "#object-state",
+                     "extract_key": "state", "expect_text": "已录入", "effect": "read_only", "on_failure": "stop", "state": "verified"},
+                ],
+            }).playbook
+            order_readback_book = SitePlaybook({
+                "schema_version": "map-site-playbook.v2",
+                "playbook_id": "readback-orders",
+                "site_id": "demo-local",
+                "title": "回读医嘱表格",
+                "systems": ["inpatient_ehr"],
+                "steps": [
+                    {"id": "v", "intent": "verify", "primitive": "verify_subject", "selector": "#patient-header",
+                     "expect_text": "患者", "effect": "read_only", "on_failure": "stop", "state": "verified"},
+                    {"id": "ref", "intent": "read ref", "primitive": "read_text", "selector": "#object-ref",
+                     "extract_key": "object_ref", "expect_text": "demo://", "effect": "read_only", "on_failure": "stop", "state": "verified"},
+                    {"id": "st", "intent": "read state", "primitive": "read_text", "selector": "#object-state",
+                     "extract_key": "state", "expect_text": "已录入", "effect": "read_only", "on_failure": "stop", "state": "verified"},
+                    {"id": "tbl", "intent": "read orders table", "primitive": "read_table", "selector": "#orders-table",
+                     "extract_key": "orders_table", "expect_text": "*", "effect": "read_only", "on_failure": "stop",
+                     "evidence": "screenshot_ref", "state": "verified"},
+                ],
+            }).playbook
+            order_payload = {
+                "type": "order_changes",
+                "changes": [
+                    {"action": "add", "code": "NEW-MED", "dose": "250", "unit": "mg", "route": "iv", "frequency": "q12h",
+                     "reason": "CRP升高", "fact_ids": ["lab-2"], "catalog_ref": "demo://catalog/NEW-MED"},
+                    {"action": "change", "code": "DEMO-MED", "target_ref": "demo://his/order/ord-1",
+                     "dose": "750", "unit": "mg", "route": "po", "frequency": "bid",
+                     "reason": "加量", "fact_ids": ["lab-1"], "catalog_ref": "demo://catalog/DEMO-MED"},
+                    {"action": "stop", "code": "STOP-MED", "target_ref": "demo://his/order/ord-2",
+                     "reason": "停用", "fact_ids": ["lab-1"], "catalog_ref": "demo://catalog/STOP-MED"},
+                ],
+            }
+            prop_ord = Proposal(SUBJECT, "revise_orders", order_payload, ("lab-1", "lab-2"), "demo://gen")
+            order_bindings = {
+                "revise_orders": {
+                    "write": "write-orders",
+                    "readback": "readback-orders",
+                    "state_map": {"已录入": "entered"},
+                    "order_table_key": "orders_table",
+                }
+            }
+            order_books = {"write-orders": order_write_book, "readback-orders": order_readback_book}
+
+            # Full success -> row-by-row reconstruction matches proposal digest
+            sb_ok = SyntheticHISSandbox()
+            sys_ok = UIClinicalSystem(DeclarativeHospitalUI(
+                profile, WindowsUIADriver(backend=sb_ok, screenshot_dir=site / "evidence"), order_books, order_bindings,
+            ))
+            receipt_ok = sys_ok.apply(prop_ord, "idem-ord-ok", None)
+            rb_ok = sys_ok.read_back(
+                receipt_ok,
+                Task("t-ord-ok", TaskRequest("r-ord-ok", "revise_orders", "调医嘱", SUBJECT, "demo://grant"), "execution_uncertain", proposal=prop_ord),
+            )
+            self.assertEqual(rb_ok.proposal_digest, prop_ord.digest)
+            self.assertEqual(rb_ok.state, "entered")
+            self.assertEqual(rb_ok.visible_payload, order_payload)
+
+            # Partial failure (index 1 skipped on target UI) -> readback refuses match!
+            sb_partial = SyntheticHISSandbox(simulate_partial_order_failure_index=1)
+            sys_partial = UIClinicalSystem(DeclarativeHospitalUI(
+                profile, WindowsUIADriver(backend=sb_partial, screenshot_dir=site / "evidence"), order_books, order_bindings,
+            ))
+            receipt_partial = sys_partial.apply(prop_ord, "idem-ord-part", None)
+            rb_partial = sys_partial.read_back(
+                receipt_partial,
+                Task("t-ord-part", TaskRequest("r-ord-part", "revise_orders", "调医嘱", SUBJECT, "demo://grant"), "execution_uncertain", proposal=prop_ord),
+            )
+            self.assertEqual(rb_partial.proposal_digest, "")
+            self.assertEqual(rb_partial.visible_payload["type"], "observed_order_table")
+
+    def test_glkvm_real_contract_honest_chinese_fallback_and_pikvm_ocr_wiring(self):
+        # 1. PureHIDSegmentedStrategy refuses raw non-ASCII by default; ime_composer sends ASCII only
+        with self.assertRaises(ChineseEntryUnqualifiedError):
+            PureHIDSegmentedStrategy().enter_text(
+                "中文病程", hid_sender=lambda _: None, backspace_sender=lambda _: None, ocr_reader=lambda _: "",
+            )
+        sent_hid: list[str] = []
+        res = PureHIDSegmentedStrategy(ime_composer=lambda s: "zhongwenbingcheng ").enter_text(
+            "中文病程",
+            hid_sender=lambda chunk: sent_hid.append(chunk),
+            backspace_sender=lambda _: None,
+            ocr_reader=lambda _: "中文病程",
+        )
+        self.assertEqual(sent_hid, ["zhongwenbingcheng "])
+        self.assertTrue(all(x.isascii() for x in sent_hid))
+        self.assertEqual(res.text_readback, "中文病程")
+
+        # 2. GLKVMNativeTransport aligns with gateway.RemoteClient contract and refuses non-ASCII HID
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_dir = Path(tmp)
+            shot_file = tmp_dir / "gw-shot.jpg"
+            shot_file.write_bytes(b"jpg-bytes")
+            calls: list[tuple[str, tuple, dict]] = []
+            seq = {"n": 0, "control_mode": "agent"}
+
+            class FakeRemoteClient:
+                async def status(self):
+                    return {"connected": True, "control_mode": seq["control_mode"], "control_owner": seq["control_mode"]}
+
+                async def observe(self, region=None, ocr=True, include_image=False):
+                    seq["n"] += 1
+                    return (
+                        {
+                            "frame_id": f"f-{seq['n']}",
+                            "captured_at": "2026-01-01T00:00:00Z",
+                            "original_size": [1920, 1080],
+                            "ocr": {"words": [{"text": "synthetic-p01", "confidence": 99, "box": [10, 10, 50, 20]}]},
+                        },
+                        None,
+                    )
+
+                async def action(self, frame_id, kind, **kwargs):
+                    calls.append((kind, (frame_id,), kwargs))
+                    seq["n"] += 1
+                    return ({"frame_id": f"f-{seq['n']}", "captured_at": "2026-01-01T00:00:01Z", "original_size": [1920, 1080], "ocr": {"words": []}}, None)
+
+                async def shot(self, region=None, label=None):
+                    return {"shot_path": str(shot_file)}
+
+                async def release(self):
+                    return {"released": True}
+
+            transport = GLKVMNativeTransport()
+            transport._client = FakeRemoteClient()
+            transport.grab_frame()
+            transport.double_click(100, 200)
+            self.assertEqual(calls[-1][0], "click")
+            self.assertEqual(calls[-1][2]["count"], 2)
+            transport.scroll(-3)
+            self.assertEqual(calls[-1][0], "scroll")
+            self.assertEqual((calls[-1][2]["dy"], calls[-1][2]["x"], calls[-1][2]["y"]), (-3, 960, 540))
+            transport.backspace(2)
+            self.assertNotEqual(calls[-2][1][0], calls[-1][1][0])  # frame_id advances per step
+            with self.assertRaises(ChineseEntryUnqualifiedError):
+                transport.send_text_hid("中文")
+            copied_shot = transport.save_shot(tmp_dir / "evidence" / "cap.png", label="test")
+            self.assertTrue(Path(copied_shot).is_file())
+            self.assertEqual(transport.release_lease(), {"released": True})
+
+            # KVMUIDriver recognizes real glkvm control_mode values ("manual", "paused", "handoff")
+            drv = KVMUIDriver(transport, expected_size=(1920, 1080), long_text_qualified=True)
+            self.assertIsInstance(drv.text_strategy, DraftOnlyFallbackStrategy)
+            for mode in ("manual", "paused", "handoff"):
+                seq["control_mode"] = mode
+                with self.assertRaises(HumanInterruptError):
+                    drv.check_human_interrupt()
+            seq["control_mode"] = "agent"
+            drv.check_human_interrupt()
+
+            # from_config defaults to DraftOnlyFallbackStrategy on glkvm without clipboard/ime, and wires RapidOCR for pikvm
+            from_cfg = KVMUIDriver.from_config({"kvm_backend": "glkvm", "long_text_qualified": True})
+            self.assertIsInstance(from_cfg.text_strategy, DraftOnlyFallbackStrategy)
+            sentinel_ocr = CallableOCREngine(lambda img, reg: ())
+            with patch("med_autopractice.adapters.drivers.ocr.RapidOCRBackend", return_value=sentinel_ocr) as mock_ocr:
+                pikvm_drv = KVMUIDriver.from_config({"kvm_backend": "pikvm", "base_url": "http://127.0.0.1:8080"})
+                mock_ocr.assert_called_once()
+                self.assertIs(pikvm_drv.ocr_engine, sentinel_ocr)
 
 
 if __name__ == "__main__":

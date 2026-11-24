@@ -34,8 +34,15 @@ def _read_server_version() -> str:
     return "0.1.5"
 
 
-def _tool_spec(name: str, description: str, properties: dict[str, Any], required: list[str] | None = None) -> dict[str, Any]:
-    return {
+def _tool_spec(
+    name: str,
+    description: str,
+    properties: dict[str, Any],
+    required: list[str] | None = None,
+    *,
+    meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    spec: dict[str, Any] = {
         "name": name,
         "description": description,
         "inputSchema": {
@@ -44,6 +51,9 @@ def _tool_spec(name: str, description: str, properties: dict[str, Any], required
             "required": required or [],
         },
     }
+    if meta is not None:
+        spec["_meta"] = meta
+    return spec
 
 
 class MAPMCPServer:
@@ -76,6 +86,8 @@ class MAPMCPServer:
         }
 
     def list_tools(self) -> list[dict[str, Any]]:
+        card_meta = {"ui": {"resourceUri": REVIEW_UI_URI, "visibility": ["model", "app"]}}
+        app_visible = {"ui": {"visibility": ["model", "app"]}}
         return [
             _tool_spec("map_site_status", "Inspect site deployment pack readiness and dependency plan.", {
                 "site_dir": {"type": "string"},
@@ -98,44 +110,44 @@ class MAPMCPServer:
                 "authority_ref": {"type": "string"},
                 "inputs": {"type": "object"},
                 "auto_submit": {"type": "boolean"},
-            }, ["request_id", "capability_id", "site_id", "patient_id", "encounter_id", "authority_ref"]),
+            }, ["request_id", "capability_id", "site_id", "patient_id", "encounter_id", "authority_ref"], meta=card_meta),
             _tool_spec("map_show_task", "Show full status, proposal, evidence, and readback for one task.", {
                 "task_id": {"type": "string"},
-            }, ["task_id"]),
+            }, ["task_id"], meta=card_meta),
             _tool_spec("map_list_tasks", "List tasks filtered optionally by status or patient_id.", {
                 "status": {"type": "string"},
                 "patient_id": {"type": "string"},
                 "limit": {"type": "integer"},
-            }),
+            }, meta=app_visible),
             _tool_spec("map_revise_task", "Revise proposal payload or inputs for an open task.", {
                 "task_id": {"type": "string"},
                 "payload": {"type": "object"},
                 "inputs": {"type": "object"},
                 "generator_ref": {"type": "string"},
                 "knowledge_refs": {"type": "array", "items": {"type": "string"}},
-            }, ["task_id"]),
+            }, ["task_id"], meta=card_meta),
             _tool_spec("map_submit_task", "Submit clinician-approved proposal digest + snapshot revision.", {
                 "task_id": {"type": "string"},
                 "clinician_id": {"type": "string"},
                 "proposal_digest": {"type": "string"},
                 "snapshot_revision": {"type": "string"},
                 "notes": {"type": "string"},
-            }, ["task_id", "clinician_id", "proposal_digest", "snapshot_revision"]),
+            }, ["task_id", "clinician_id", "proposal_digest", "snapshot_revision"], meta=card_meta),
             _tool_spec("map_review_task", "Record clinician acceptance or rejection after readback.", {
                 "task_id": {"type": "string"},
                 "clinician_id": {"type": "string"},
                 "accepted": {"type": "boolean"},
                 "feedback": {"type": "string"},
                 "digest": {"type": "string"},
-            }, ["task_id", "clinician_id", "accepted"]),
+            }, ["task_id", "clinician_id", "accepted"], meta=card_meta),
             _tool_spec("map_reconcile_task", "Reconcile uncertain execution against the target clinical system.", {
                 "task_id": {"type": "string"},
-            }, ["task_id"]),
+            }, ["task_id"], meta=card_meta),
             _tool_spec("map_cancel_task", "Cancel an active task and record audit reason.", {
                 "task_id": {"type": "string"},
                 "reason": {"type": "string"},
                 "clinician_id": {"type": "string"},
-            }, ["task_id", "reason"]),
+            }, ["task_id", "reason"], meta=card_meta),
         ]
 
     def list_resources(self) -> list[dict[str, Any]]:
@@ -144,6 +156,12 @@ class MAPMCPServer:
             "name": "MAP Clinical Review Card",
             "description": "OPL MiniApp / MCP App interactive clinical proposal and readback review UI.",
             "mimeType": "text/html;profile=mcp-app",
+            "_meta": {
+                "ui": {
+                    "prefersBorder": True,
+                    "csp": {"connectDomains": [], "resourceDomains": []},
+                }
+            },
         }]
 
     def read_resource(self, uri: str) -> dict[str, Any]:
@@ -294,7 +312,7 @@ class MAPMCPServer:
             if isinstance(data, dict) and "task_id" in data:
                 response["_meta"] = {
                     "ui": {
-                        "resourceUri": f"{REVIEW_UI_URI}?task_id={data['task_id']}",
+                        "resourceUri": REVIEW_UI_URI,
                         "card": build_review_card_model(data),
                     }
                 }
@@ -318,7 +336,15 @@ class MAPMCPServer:
             if method == "initialize":
                 result: Any = {
                     "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}, "resources": {}},
+                    "capabilities": {
+                        "tools": {},
+                        "resources": {},
+                        "extensions": {
+                            "io.modelcontextprotocol/ui": {
+                                "mimeTypes": ["text/html;profile=mcp-app"],
+                            }
+                        },
+                    },
                     "serverInfo": {"name": "med-autopractice", "version": self.version},
                 }
             elif method == "ping":

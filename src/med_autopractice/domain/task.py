@@ -114,6 +114,7 @@ class TaskPolicy:
     expected_system_state: str | None
     required_scopes: tuple[str, ...] = ()
     deployment_revision: str = ""
+    allow_partial_draft: bool = False
 
     def __post_init__(self) -> None:
         order_changes = {
@@ -122,6 +123,8 @@ class TaskPolicy:
         }
         if self.capability_id in order_changes and not self.requires_pre_submit_review:
             raise ValueError("order changes require clinician approval before submission")
+        if self.capability_id in order_changes and self.allow_partial_draft:
+            raise ValueError("order workflows cannot enable partial draft mode")
 
 
 @dataclass(frozen=True)

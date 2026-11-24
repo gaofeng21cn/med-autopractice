@@ -59,13 +59,22 @@ def segment_chinese_text(text: str, max_segment_chars: int = 30) -> list[str]:
 
 
 class PureHIDSegmentedStrategy:
-    """Strategy B (primary fallback): pure HID segmented injection + local OCR verification & backspace recovery."""
+    """Strategy B (primary fallback): segmented ASCII/IME HID injection + local OCR verification."""
 
     name = "pure_hid_ocr"
 
-    def __init__(self, *, max_segment_chars: int = 30, max_retries: int = 2):
+    def __init__(
+        self,
+        *,
+        max_segment_chars: int = 30,
+        max_retries: int = 2,
+        allow_unicode_hid: bool = False,
+        ime_composer: Callable[[str], str] | None = None,
+    ):
         self.max_segment_chars = max_segment_chars
         self.max_retries = max_retries
+        self.allow_unicode_hid = allow_unicode_hid
+        self.ime_composer = ime_composer
 
     def enter_text(
         self,
@@ -77,14 +86,26 @@ class PureHIDSegmentedStrategy:
         clipboard_paster: Callable[[str], bool] | None = None,
         verify_region: tuple[int, int, int, int] | None = None,
     ) -> TextEntryResult:
+        if not text.isascii() and not self.allow_unicode_hid and self.ime_composer is None:
+            raise ChineseEntryUnqualifiedError(
+                "HID text transport accepts ASCII only; non-ASCII Chinese requires qualified IME composer or clipboard relay"
+            )
         segments = segment_chinese_text(text, self.max_segment_chars)
         accepted = ""
         retries = 0
         for index, seg in enumerate(segments):
+            if not seg.isascii() and self.ime_composer is not None:
+                payload = self.ime_composer(seg)
+                if not payload or not payload.isascii():
+                    raise ChineseEntryUnqualifiedError(
+                        "IME composer must emit non-empty ASCII keystrokes for USB HID"
+                    )
+            else:
+                payload = seg
             expected = accepted + seg
             verified = False
             for attempt in range(self.max_retries + 1):
-                hid_sender(seg)
+                hid_sender(payload)
                 observed = ocr_reader(verify_region)
                 if observed.endswith(expected) or expected in observed:
                     accepted = expected

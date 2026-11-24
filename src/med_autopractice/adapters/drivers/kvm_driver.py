@@ -17,11 +17,13 @@ from uuid import uuid4
 
 from med_autopractice.adapters.drivers.ocr import OCREngine, OCRWord
 from med_autopractice.adapters.drivers.text_entry import (
+    ChineseEntryUnqualifiedError,
     ClipboardRelayStrategy,
     DraftOnlyFallbackStrategy,
     PureHIDSegmentedStrategy,
     TextEntryStrategy,
 )
+from med_autopractice.platform.security import is_windows
 from med_autopractice.adapters.playbook_runner import (
     HumanInterruptError, ScreenObservation, TableData,
 )
@@ -78,12 +80,16 @@ class KVMTransport(Protocol):
 
 
 class GLKVMNativeTransport:
-    """Configurable adapter for glkvm-native without hardcoded filesystem paths."""
+    """Configurable adapter for glkvm-native matching gateway.RemoteClient contract."""
+
+    supports_unicode_hid = False
 
     def __init__(self, *, receipt_path: Path | None = None, profile: str | None = None):
         self.receipt_path = receipt_path
         self.profile = profile or os.environ.get("GLKVM_PROFILE")
         self._client = None
+        self._last_frame_id: str | None = None
+        self._last_size: tuple[int, int] = (1280, 720)
 
     @classmethod
     def discover_receipt(cls) -> Path | None:
@@ -130,6 +136,14 @@ class GLKVMNativeTransport:
     def _run(self, coro):
         return asyncio.run(coro)
 
+    def _track_meta(self, meta: dict[str, Any]) -> dict[str, Any]:
+        if meta.get("frame_id"):
+            self._last_frame_id = str(meta["frame_id"])
+        orig = meta.get("original_size")
+        if isinstance(orig, (list, tuple)) and len(orig) == 2:
+            self._last_size = (int(orig[0]), int(orig[1]))
+        return meta
+
     def status(self) -> dict[str, Any]:
         return dict(self._run(self._ensure_client().status()))
 
@@ -139,44 +153,75 @@ class GLKVMNativeTransport:
         meta, image = self._run(
             self._ensure_client().observe(list(region) if region else None, ocr=ocr, include_image=include_image)
         )
+        self._track_meta(meta)
         return {**meta, "image": image}
 
     def click(self, x: int, y: int, *, frame_id: str | None = None) -> dict[str, Any]:
-        meta, _ = self._run(self._ensure_client().action(frame_id or "", "click", x=x, y=y, result_mode="ocr"))
-        return meta
+        fid = frame_id or self._last_frame_id or ""
+        meta, _ = self._run(
+            self._ensure_client().action(fid, "click", x=int(x), y=int(y), count=1, result_mode="ocr")
+        )
+        return self._track_meta(meta)
 
     def double_click(self, x: int, y: int, *, frame_id: str | None = None) -> dict[str, Any]:
+        fid = frame_id or self._last_frame_id or ""
         meta, _ = self._run(
-            self._ensure_client().action(frame_id or "", "double_click", x=x, y=y, result_mode="ocr")
+            self._ensure_client().action(fid, "click", x=int(x), y=int(y), count=2, result_mode="ocr")
         )
-        return meta
+        return self._track_meta(meta)
 
     def send_keys(self, keys: str, *, frame_id: str | None = None) -> dict[str, Any]:
-        meta, _ = self._run(self._ensure_client().action(frame_id or "", "keys", keys=keys, result_mode="ocr"))
-        return meta
+        fid = frame_id or self._last_frame_id or ""
+        meta, _ = self._run(self._ensure_client().action(fid, "keys", keys=keys, result_mode="ocr"))
+        return self._track_meta(meta)
 
     def send_text_hid(self, text: str, *, frame_id: str | None = None) -> dict[str, Any]:
-        meta, _ = self._run(self._ensure_client().action(frame_id or "", "text", text=text, result_mode="ocr"))
-        return meta
+        if not text or not text.isascii():
+            raise ChineseEntryUnqualifiedError("glkvm-native HID text entry accepts non-empty ASCII only")
+        fid = frame_id or self._last_frame_id or ""
+        meta, _ = self._run(self._ensure_client().action(fid, "text", text=text, result_mode="ocr"))
+        return self._track_meta(meta)
 
     def backspace(self, count: int, *, frame_id: str | None = None) -> dict[str, Any]:
-        meta = {}
+        meta: dict[str, Any] = {}
+        next_fid = frame_id or self._last_frame_id
         for _ in range(count):
-            meta = self.send_keys("Backspace", frame_id=frame_id)
+            meta = self.send_keys("Backspace", frame_id=next_fid)
+            next_fid = str(meta.get("frame_id") or self._last_frame_id or "")
         return meta
 
     def scroll(self, delta: int, *, x=None, y=None, frame_id: str | None = None) -> dict[str, Any]:
+        fid = frame_id or self._last_frame_id or ""
+        raw_dy = int(delta)
+        dy = -1 if raw_dy == 0 else max(-20, min(20, raw_dy))
+        tx = self._last_size[0] // 2 if x is None else int(x)
+        ty = self._last_size[1] // 2 if y is None else int(y)
         meta, _ = self._run(
-            self._ensure_client().action(frame_id or "", "scroll", delta=delta, x=x, y=y, result_mode="ocr")
+            self._ensure_client().action(fid, "scroll", dy=dy, x=tx, y=ty, result_mode="ocr")
         )
-        return meta
+        return self._track_meta(meta)
 
     def set_clipboard(self, text: str) -> bool:
         return False
 
     def save_shot(self, destination: Path, *, region=None, label: str | None = None) -> str:
         meta = self._run(self._ensure_client().shot(region=list(region) if region else None, label=label))
-        return str(meta.get("shot_path") or destination)
+        shot_path = meta.get("shot_path")
+        if shot_path:
+            src = Path(str(shot_path))
+            if src.is_file():
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(src, destination)
+                if not is_windows():
+                    destination.chmod(0o600)
+                return str(destination)
+            return str(shot_path)
+        return str(destination)
+
+    def release_lease(self) -> dict[str, Any]:
+        if self._client is None:
+            return {"released": False}
+        return dict(self._run(self._client.release()))
 
 
 class PiKVMHttpTransport:
@@ -335,6 +380,7 @@ class KVMUIDriver:
         screenshot_dir: Path | None = None,
         long_text_qualified: bool = False,
         allow_clipboard_relay: bool = False,
+        ime_composer: Callable[[str], str] | None = None,
     ):
         self.transport = transport
         self.ocr_engine = ocr_engine
@@ -348,11 +394,22 @@ class KVMUIDriver:
             self.text_strategy = DraftOnlyFallbackStrategy()
         elif allow_clipboard_relay:
             self.text_strategy = ClipboardRelayStrategy(allow_clipboard_relay=True)
+        elif ime_composer is not None:
+            self.text_strategy = PureHIDSegmentedStrategy(ime_composer=ime_composer)
+        elif getattr(transport, "supports_unicode_hid", False):
+            self.text_strategy = PureHIDSegmentedStrategy(allow_unicode_hid=True)
         else:
-            self.text_strategy = PureHIDSegmentedStrategy()
+            # Pure USB HID cannot transmit non-ASCII directly without IME composer or clipboard relay.
+            self.text_strategy = DraftOnlyFallbackStrategy()
 
     @classmethod
-    def from_config(cls, config: dict[str, Any], *, screenshot_dir: Path | None = None) -> "KVMUIDriver":
+    def from_config(
+        cls,
+        config: dict[str, Any],
+        *,
+        screenshot_dir: Path | None = None,
+        ocr_engine: OCREngine | None = None,
+    ) -> "KVMUIDriver":
         backend = config.get("kvm_backend", "glkvm")
         if backend == "pikvm":
             transport: KVMTransport = PiKVMHttpTransport(config["base_url"])
@@ -361,9 +418,21 @@ class KVMUIDriver:
             transport = GLKVMNativeTransport(receipt_path=receipt, profile=config.get("glkvm_profile"))
         else:
             raise ValueError(f"unsupported kvm_backend in config: {backend!r}")
+
+        resolved_ocr = ocr_engine
+        ocr_backend = config.get("ocr_backend")
+        if resolved_ocr is None:
+            if ocr_backend == "rapidocr" or (ocr_backend is None and backend == "pikvm"):
+                from med_autopractice.adapters.drivers.ocr import RapidOCRBackend
+
+                resolved_ocr = RapidOCRBackend()
+            elif ocr_backend not in {None, "none"}:
+                raise ValueError(f"unsupported ocr_backend in config: {ocr_backend!r}")
+
         size = tuple(config["expected_size"]) if config.get("expected_size") else None
         return cls(
             transport,
+            ocr_engine=resolved_ocr,
             expected_size=size,
             screenshot_dir=screenshot_dir,
             long_text_qualified=bool(config.get("long_text_qualified", False)),
@@ -397,8 +466,14 @@ class KVMUIDriver:
         if self._interrupted:
             raise HumanInterruptError("KVM control lease interrupted by clinician takeover")
         st = self.transport.status()
-        if st.get("control_mode") == "human_takeover" or st.get("human_active"):
-            raise HumanInterruptError("KVM device reports active human takeover")
+        if (
+            st.get("control_mode") in {"human_takeover", "manual", "paused", "handoff"}
+            or st.get("control_owner") in {"manual", "paused", "external_handoff"}
+            or bool(st.get("human_active"))
+        ):
+            raise HumanInterruptError(
+                f"KVM device reports active human control ({st.get('control_mode') or st.get('control_owner')})"
+            )
 
     def observe(self, region: tuple[int, int, int, int] | None = None) -> ScreenObservation:
         self.check_human_interrupt()
@@ -492,13 +567,25 @@ class KVMUIDriver:
         def _clip_paste(payload: str) -> bool:
             if not self.transport.set_clipboard(payload):
                 return False
-            self.transport.send_keys("Ctrl+v", frame_id=self._last_frame_id)
+            meta = self.transport.send_keys("Ctrl+v", frame_id=self._last_frame_id)
+            if isinstance(meta, dict) and meta.get("frame_id"):
+                self._last_frame_id = str(meta["frame_id"])
             return True
+
+        def _hid_send(chunk: str) -> None:
+            meta = self.transport.send_text_hid(chunk, frame_id=self._last_frame_id)
+            if isinstance(meta, dict) and meta.get("frame_id"):
+                self._last_frame_id = str(meta["frame_id"])
+
+        def _bs_send(cnt: int) -> None:
+            meta = self.transport.backspace(cnt, frame_id=self._last_frame_id)
+            if isinstance(meta, dict) and meta.get("frame_id"):
+                self._last_frame_id = str(meta["frame_id"])
 
         self.text_strategy.enter_text(
             text,
-            hid_sender=lambda chunk: self.transport.send_text_hid(chunk, frame_id=self._last_frame_id),
-            backspace_sender=lambda cnt: self.transport.backspace(cnt, frame_id=self._last_frame_id),
+            hid_sender=_hid_send,
+            backspace_sender=_bs_send,
             ocr_reader=lambda reg: self.observe(reg).full_text(),
             clipboard_paster=_clip_paste,
             verify_region=region_hint,

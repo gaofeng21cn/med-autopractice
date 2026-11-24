@@ -228,6 +228,7 @@
       "src/med_autopractice/runtime.py",
       "src/med_autopractice/storage/__init__.py",
       "src/med_autopractice/storage/crypto.py",
+      "src/med_autopractice/storage/evidence_store.py",
       "src/med_autopractice/storage/retention.py",
       "src/med_autopractice/workflows/__init__.py",
       "src/med_autopractice/workflows/catalog.py",
@@ -267,7 +268,7 @@
       "examples/synthetic/local_provider.py",
       "examples/synthetic/local_deployment.py"
     ],
-    "digest": "sha256:0a289df3cf1c40e724ea8ee5a8d3e58625bae6c3135e20a0596134f079694a62"
+    "digest": "sha256:68335ca4cf0f87602d8a322c8107a80820f7b8d17cab755972b847b7a8023184"
   },
   "management_scope": "local_product"
 }

@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from med_autopractice.agent.task_engine import JsonlAuditSink
 from med_autopractice.agent.task_store import ConcurrentTaskUpdate, SyntheticSqliteTaskStore
-from med_autopractice.deployment import build_site_runtime
+from med_autopractice.deployment import apply_site_retention, build_site_runtime
 from med_autopractice.domain.task import ClinicianApproval, SubjectRef, TaskRequest
 from med_autopractice.runtime import TaskRuntime, build_synthetic_runtime
 from med_autopractice.workflows.catalog import LOCAL_WORKFLOWS
@@ -114,6 +114,9 @@ def build_parser() -> argparse.ArgumentParser:
     reconcile = commands.add_parser("reconcile", parents=[common],
                                     help="look for an uncertain submission without replay")
     reconcile.add_argument("--task-id", required=True)
+    retention = commands.add_parser("retention", parents=[common],
+                                    help="clean expired evidence screenshots and logs for a site")
+    retention.add_argument("--dry-run", action="store_true")
     return parser
 
 
@@ -144,6 +147,12 @@ def run_batch(runtime: TaskRuntime, path: Path) -> dict:
 def main() -> int:
     args = build_parser().parse_args()
     try:
+        if args.command == "retention":
+            if not args.site:
+                raise ValueError("retention requires --site")
+            view = apply_site_retention(args.site, dry_run=args.dry_run).to_dict()
+            print(json.dumps(view, ensure_ascii=False, indent=2, default=str))
+            return 0
         runtime = _runtime(args)
         if args.command == "start":
             view = runtime.start(_request_from(args.request), auto_submit=args.auto_submit)

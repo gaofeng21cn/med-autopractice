@@ -189,7 +189,7 @@ class Phase3ToolingAndProtocolsTests(unittest.TestCase):
                 screenshot_dir=kvm_site / "evidence",
                 expected_size=(1280, 720),
                 long_text_qualified=True,
-                text_strategy=PureHIDSegmentedStrategy(max_segment_chars=30, max_retries=2),
+                text_strategy=PureHIDSegmentedStrategy(max_segment_chars=30, max_retries=2, allow_unicode_hid=True),
             )
             kvm_report = run_qualification_suite(
                 kvm_site,
@@ -226,6 +226,59 @@ class Phase3ToolingAndProtocolsTests(unittest.TestCase):
                 next(d for d in still_observed["dependencies"] if d["id"] == "save_inpatient_note_draft")["state"],
                 "observed",
             )
+
+            # 4. Qualification CLI passes 5/5 with --sandbox --handoff-mode synthetic and fails with --handoff-mode none
+            cli_site, _cli_books = _prepare_observed_site(Path(tmp) / "cli")
+            (cli_site / "deployment.json").write_text(json.dumps({
+                "schema_version": "map-local-deployment.v1",
+                "site_id": "demo-local",
+                "driver": {"kind": "windows_uia"},
+                "playbooks": {
+                    "write_inpatient_notes": {
+                        "collect": ["collect-labs"],
+                        "write": "write-note",
+                        "readback": "readback-note",
+                    }
+                },
+                "capabilities": {"write_inpatient_notes": "saved_draft"},
+                "rules": {"write_inpatient_notes": {"approved_ref": "demo://rules/1", "sections": ["观察"]}},
+            }, ensure_ascii=False), encoding="utf-8")
+            cli_none = subprocess.run([
+                sys.executable, str(ROOT / "scripts/site_qualify.py"),
+                "--site", str(cli_site), "--sandbox", "--handoff-mode", "none",
+            ], capture_output=True, text=True)
+            self.assertNotEqual(cli_none.returncode, 0)
+            self.assertFalse(json.loads(cli_none.stdout)["passed"])
+
+            cli_ok = subprocess.run([
+                sys.executable, str(ROOT / "scripts/site_qualify.py"),
+                "--site", str(cli_site), "--sandbox", "--handoff-mode", "synthetic", "--promote",
+            ], capture_output=True, text=True, check=True)
+            cli_report = json.loads(cli_ok.stdout)
+            self.assertTrue(cli_report["passed"])
+            self.assertEqual(set(cli_report["promoted_dependencies"]), {"save_inpatient_note_draft", "readback_inpatient_note"})
+
+            # 5. Interactive handoff mode verifies real check_human_interrupt transition paused -> recovered
+            sb_int = SyntheticHISSandbox()
+            drv_int = WindowsUIADriver(backend=sb_int, screenshot_dir=cli_site / "evidence")
+            polls = {"count": 0}
+            orig_detect = sb_int.user_input_detected
+
+            def _toggle_interrupt():
+                polls["count"] += 1
+                if polls["count"] == 2:
+                    sb_int.human_interrupted = True
+                elif polls["count"] >= 4:
+                    sb_int.human_interrupted = False
+                return orig_detect()
+
+            sb_int.user_input_detected = _toggle_interrupt
+            from med_autopractice.workflows.site_qualify import _check_human_interrupt
+
+            item = _check_human_interrupt(
+                drv_int, None, interactive_handoff=True, handoff_timeout_sec=2.0, poll_interval_sec=0.01,
+            )
+            self.assertTrue(item.passed)
 
     def test_full_fhir_and_rest_middleware_roundtrips_via_loopback_servers(self):
         stored_fhir: dict[str, dict] = {}
@@ -271,6 +324,7 @@ class Phase3ToolingAndProtocolsTests(unittest.TestCase):
                         self._send(200, {"resourceType": "Bundle", "entry": [{"resource": {
                             "resourceType": "MedicationRequest", "id": "ord-1", "status": "active",
                             "subject": {"reference": "Patient/synthetic-p01"},
+                            "encounter": {"reference": "Encounter/synthetic-e01"},
                             "medicationCodeableConcept": {"text": "DEMO-MED", "coding": [{"code": "DEMO-MED"}]},
                             "meta": {"versionId": "1"},
                         }}]})
@@ -334,11 +388,21 @@ class Phase3ToolingAndProtocolsTests(unittest.TestCase):
         thread.start()
         try:
             port = srv.server_address[1]
-            fhir = FHIRClinicalSystem(f"http://127.0.0.1:{port}/fhir", "demo-local", access_token=lambda: "demo-tok")
-            snap = fhir.read_context(SUBJECT, "write_inpatient_notes")
+            fhir_ro = FHIRClinicalSystem(f"http://127.0.0.1:{port}/fhir", "demo-local", access_token=lambda: "demo-tok")
+            snap = fhir_ro.read_context(SUBJECT, "write_inpatient_notes")
             self.assertEqual(len(snap.facts), 2)
+            self.assertNotIn("nursing", {c.scope for c in snap.coverage if c.complete})
             req_note = TaskRequest("r-fhir-1", "write_inpatient_notes", "写病程", SUBJECT, "demo://grant")
             prop = Proposal(SUBJECT, "write_inpatient_notes", {"type": "note_draft", "sections": [{"section": "观察", "entries": [{"text": "今日平稳"}]}]}, ("Observation/obs-1",), "demo://gen")
+            self.assertFalse(fhir_ro.can_apply(prop))
+            with self.assertRaises(PermissionError):
+                fhir_ro.apply(prop, "idem-ro", None)
+
+            fhir = FHIRClinicalSystem(
+                f"http://127.0.0.1:{port}/fhir", "demo-local",
+                access_token=lambda: "demo-tok",
+                write_capabilities=("write_inpatient_notes",),
+            )
             receipt = fhir.apply(prop, "idem-fhir-1", None)
             task_obj = Task("t-fhir-1", req_note, "execution_uncertain", snapshot=snap, proposal=prop, idempotency_key="idem-fhir-1", receipt=receipt)
             rb = fhir.read_back(receipt, task_obj)

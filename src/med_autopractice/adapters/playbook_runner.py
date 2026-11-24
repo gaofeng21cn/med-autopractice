@@ -6,6 +6,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import json
+import re
 import time
 from typing import Any, Protocol
 
@@ -117,6 +118,7 @@ class PlaybookExecutionResult:
     traces: tuple[StepTrace, ...]
     screenshot_refs: tuple[str, ...]
     observed_at: str
+    observed_subject: SubjectRef | None = None
 
 
 _PRIMITIVE_ALIASES: dict[str, str] = {
@@ -133,6 +135,40 @@ _PRIMITIVE_ALIASES: dict[str, str] = {
 }
 
 
+def _token_present(text: str, token: str) -> bool:
+    return bool(re.search(rf"(?<![A-Za-z0-9_-]){re.escape(token)}(?![A-Za-z0-9_-])", text))
+
+
+def _verify_scoped_subject(obs: ScreenObservation, subject: SubjectRef) -> SubjectRef:
+    meta = obs.metadata or {}
+    if meta.get("patient_id") is not None and str(meta["patient_id"]).strip() != subject.patient_id:
+        raise UIStateError("screen metadata patient_id does not match subject")
+    if meta.get("encounter_id") is not None and str(meta["encounter_id"]).strip() != subject.encounter_id:
+        raise UIStateError("screen metadata encounter_id does not match subject")
+
+    text_blob = obs.full_text()
+    if not _token_present(text_blob, subject.patient_id) or not _token_present(text_blob, subject.encounter_id):
+        raise UIStateError("unique patient and encounter identifiers are not both visible")
+
+    patient_mentions = {
+        m.strip()
+        for m in re.findall(r"(?:患者|病人|patient(?:_id)?)[：:\s=]+([A-Za-z0-9_-]+)", text_blob, re.IGNORECASE)
+        if m.strip()
+    }
+    if len(patient_mentions) > 1 or (patient_mentions and patient_mentions != {subject.patient_id}):
+        raise UIStateError("ambiguous or mismatched patient identifier visible on screen")
+
+    encounter_mentions = {
+        m.strip()
+        for m in re.findall(r"(?:就诊|住院号|encounter(?:_id)?)[：:\s=]+([A-Za-z0-9_-]+)", text_blob, re.IGNORECASE)
+        if m.strip()
+    }
+    if len(encounter_mentions) > 1 or (encounter_mentions and encounter_mentions != {subject.encounter_id}):
+        raise UIStateError("ambiguous or mismatched encounter identifier visible on screen")
+
+    return SubjectRef(subject.site_id, subject.patient_id, subject.encounter_id)
+
+
 class PlaybookRunner:
     """Execute declarative Playbook v1/v2 steps safely against any UIDriver."""
 
@@ -143,11 +179,24 @@ class PlaybookRunner:
         wait_timeout_sec: float = 2.0,
         poll_interval_sec: float = 0.05,
         handoff_handler: Callable[[PlaybookStep, ScreenObservation], ScreenObservation] | None = None,
+        session_guard: Any | None = None,
     ):
         self.driver = driver
         self.wait_timeout_sec = wait_timeout_sec
         self.poll_interval_sec = poll_interval_sec
         self.handoff_handler = handoff_handler
+        self.session_guard = session_guard
+
+    def _check_session_observation(self, obs: ScreenObservation) -> None:
+        if self.session_guard is None:
+            return
+        event = self.session_guard.inspect_observation(obs)
+        if event is not None:
+            from med_autopractice.adapters.session_guard import SessionLockedError
+
+            raise SessionLockedError(
+                f"hospital session locked or expired ({event.matched_keyword}); manual relogin required"
+            )
 
     def run(
         self,
@@ -160,10 +209,13 @@ class PlaybookRunner:
         extracted_scopes: dict[str, str] = {}
         traces: list[StepTrace] = []
         screenshots: list[str] = []
+        subject_state: dict[str, SubjectRef | None] = {"observed": None}
 
         for step in playbook.steps:
             self.driver.check_human_interrupt()
-            obs, step_shot = self._run_step_with_policy(step, subject, param_map, extracted, extracted_scopes)
+            obs, step_shot = self._run_step_with_policy(
+                step, subject, param_map, extracted, extracted_scopes, subject_state,
+            )
             if step_shot:
                 screenshots.append(step_shot)
             elif step.evidence == "screenshot_ref":
@@ -187,6 +239,7 @@ class PlaybookRunner:
             traces=tuple(traces),
             screenshot_refs=tuple(screenshots),
             observed_at=now_iso,
+            observed_subject=subject_state["observed"],
         )
 
     def _run_step_with_policy(
@@ -196,22 +249,31 @@ class PlaybookRunner:
         params: Mapping[str, Any],
         extracted: dict[str, Any],
         extracted_scopes: dict[str, str],
+        subject_state: dict[str, SubjectRef | None],
     ) -> tuple[ScreenObservation, str | None]:
+        from med_autopractice.adapters.session_guard import SessionLockedError
+
         attempts = 2 if step.on_failure == "retry_once" else 1
         last_error: Exception | None = None
         for attempt in range(attempts):
             self.driver.check_human_interrupt()
+            if step.is_write and self.session_guard is not None:
+                self.session_guard.assert_can_write()
             try:
-                obs, shot = self._execute_single_step(step, subject, params, extracted, extracted_scopes)
+                obs, shot = self._execute_single_step(
+                    step, subject, params, extracted, extracted_scopes, subject_state,
+                )
+                self._check_session_observation(obs)
                 if not self._matches_expectation(obs, step.expect_text):
                     if step.on_failure == "reobserve":
                         obs = self.driver.observe(step.region_hint)
+                        self._check_session_observation(obs)
                     if not self._matches_expectation(obs, step.expect_text):
                         raise UIStateError(
                             f"step {step.id} expected text {step.expect_text!r} not observed"
                         )
                 return obs, shot
-            except HumanInterruptError:
+            except (HumanInterruptError, SessionLockedError):
                 raise
             except Exception as error:
                 last_error = error
@@ -236,6 +298,7 @@ class PlaybookRunner:
         params: Mapping[str, Any],
         extracted: dict[str, Any],
         extracted_scopes: dict[str, str],
+        subject_state: dict[str, SubjectRef | None],
     ) -> tuple[ScreenObservation, str | None]:
         op = _PRIMITIVE_ALIASES.get(step.primitive, step.primitive)
         if op == "observe":
@@ -256,12 +319,14 @@ class PlaybookRunner:
         if op == "wait_state":
             deadline = time.monotonic() + self.wait_timeout_sec
             obs = self.driver.observe(step.region_hint)
+            self._check_session_observation(obs)
             while not self._matches_expectation(obs, step.expect_text):
                 self.driver.check_human_interrupt()
                 if time.monotonic() >= deadline:
                     raise UIStateError(f"wait_state timed out for {step.expect_text!r}")
                 time.sleep(self.poll_interval_sec)
                 obs = self.driver.observe(step.region_hint)
+                self._check_session_observation(obs)
             return obs, None
 
         if op == "input_text":
@@ -276,10 +341,14 @@ class PlaybookRunner:
             return obs, None
 
         if op == "verify_subject":
-            obs = self.driver.observe(step.region_hint)
-            text_blob = obs.full_text()
-            if subject.patient_id not in text_blob or subject.encounter_id not in text_blob:
-                raise UIStateError("unique patient and encounter identifiers are not both visible")
+            reader = getattr(self.driver, "read_field", None)
+            if step.selector and callable(reader):
+                obs = reader(target=step.target, selector=step.selector, region_hint=step.region_hint)
+            else:
+                obs = self.driver.observe(step.region_hint)
+            self._check_session_observation(obs)
+            verified = _verify_scoped_subject(obs, subject)
+            subject_state["observed"] = verified
             return obs, None
 
         if op == "read_text":

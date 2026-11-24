@@ -7,13 +7,79 @@ from hashlib import sha256
 import json
 from typing import Any
 
-from med_autopractice.adapters.playbook_runner import PlaybookRunner, UIDriver
+from med_autopractice.adapters.playbook_runner import PlaybookExecutionResult, PlaybookRunner, UIDriver
 from med_autopractice.adapters.ui import HospitalUI, UIProfile, UIStateError, VisibleObject
 from med_autopractice.domain.task import (
     ExecutionReceipt, Fact, Proposal, Snapshot, SourceCoverage, SubjectRef, Task,
 )
-from med_autopractice.medicine.proposals import NOTES
+from med_autopractice.medicine.proposals import ORDERS
 from med_autopractice.workflows.site_playbook import Playbook
+
+_CANONICAL_STATES = frozenset({"saved_draft", "entered", "active", "stopped", "cancelled", "draft"})
+
+
+def _normalize_state(raw: Any, state_map: Mapping[str, str] | None = None) -> str:
+    if raw is None:
+        return ""
+    text_val = str(raw).strip()
+    if not text_val:
+        return ""
+    if state_map:
+        if text_val in state_map:
+            return str(state_map[text_val]).strip()
+        for key, mapped in sorted(state_map.items(), key=lambda kv: len(str(kv[0])), reverse=True):
+            if key and str(key) in text_val:
+                return str(mapped).strip()
+    if text_val in _CANONICAL_STATES:
+        return text_val
+    return ""
+
+
+def _resolve_observed_subject(
+    res: PlaybookExecutionResult,
+    expected: SubjectRef,
+    *,
+    strict: bool,
+) -> SubjectRef:
+    obs_pat = res.extracted.get("observed_patient_id")
+    obs_enc = res.extracted.get("observed_encounter_id")
+    if isinstance(obs_pat, str) and obs_pat.strip() and isinstance(obs_enc, str) and obs_enc.strip():
+        observed = SubjectRef(expected.site_id, obs_pat.strip(), obs_enc.strip())
+    elif res.observed_subject is not None:
+        observed = res.observed_subject
+    else:
+        if strict:
+            raise UIStateError("playbook did not verify observed patient and encounter identity")
+        return SubjectRef(expected.site_id, "__unverified__", "__unverified__")
+    if strict and observed != expected:
+        raise UIStateError(f"observed subject {observed} differs from expected {expected}")
+    return observed
+
+
+def _normalize_order_rows(raw_table: Mapping[str, Any], binding: Mapping[str, Any]) -> list[dict[str, Any]]:
+    col_map = dict(binding.get("order_column_map") or {})
+    status_map = dict(binding.get("order_status_map") or {})
+    normalized_rows: list[dict[str, Any]] = []
+    for raw_row in raw_table.get("rows", []):
+        if not isinstance(raw_row, Mapping):
+            continue
+        row: dict[str, Any] = {}
+        for key, val in raw_row.items():
+            mapped_key = str(col_map.get(key, key))
+            row[mapped_key] = val
+        if not row.get("object_ref") and row.get("target_ref"):
+            row["object_ref"] = str(row["target_ref"])
+        if "status" in row and row["status"] is not None:
+            raw_status = str(row["status"]).strip()
+            mapped_status = status_map.get(raw_status)
+            if mapped_status is None:
+                for key, val in sorted(status_map.items(), key=lambda kv: len(str(kv[0])), reverse=True):
+                    if key and str(key) in raw_status:
+                        mapped_status = str(val)
+                        break
+            row["status"] = (mapped_status or raw_status).strip().lower()
+        normalized_rows.append(row)
+    return normalized_rows
 
 
 def _flatten_proposal_params(proposal: Proposal, existing_object_ref: str | None) -> dict[str, Any]:
@@ -82,6 +148,8 @@ class DeclarativeHospitalUI:
 
         for pid in collect_ids:
             res = self.runner.run(self._playbook(pid), subject)
+            if res.observed_subject is not None and res.observed_subject != subject:
+                raise UIStateError("collect playbook observed mismatched patient or encounter")
             for trace in res.traces:
                 trace_refs.append(trace.trace_ref)
             for key, raw_value in res.extracted.items():
@@ -148,13 +216,13 @@ class DeclarativeHospitalUI:
             raise UIStateError(f"no write playbook configured for {proposal.capability_id}")
         params = _flatten_proposal_params(proposal, existing_object_ref)
         res = self.runner.run(self._playbook(write_id), proposal.subject, params=params)
-        object_ref = str(
-            res.extracted.get("object_ref")
-            or existing_object_ref
-            or f"ui://{self.profile.site_id}/{proposal.capability_id}/{proposal.digest[:12]}"
-        )
-        default_state = "saved_draft" if proposal.capability_id in NOTES else "entered"
-        state = str(res.extracted.get("state") or default_state)
+        _resolve_observed_subject(res, proposal.subject, strict=True)
+        object_ref = str(res.extracted.get("object_ref") or "").strip()
+        if not object_ref:
+            raise UIStateError("write playbook did not observe target object_ref")
+        state = _normalize_state(res.extracted.get("state"), binding.get("state_map"))
+        if not state:
+            raise UIStateError("write playbook did not observe target object state")
         return ExecutionReceipt(object_ref, state, tuple(t.trace_ref for t in res.traces))
 
     def open_object(self, subject: SubjectRef, capability_id: str, object_ref: str) -> VisibleObject:
@@ -168,16 +236,38 @@ class DeclarativeHospitalUI:
             if res.screenshot_refs
             else self.driver.screenshot(label=f"readback-{capability_id}")
         )
+        observed_subject = _resolve_observed_subject(res, subject, strict=False)
+        observed_ref = str(res.extracted.get("object_ref") or "").strip()
+        observed_state = _normalize_state(res.extracted.get("state"), binding.get("state_map"))
+
         payload = res.extracted.get("visible_payload")
-        if not isinstance(payload, dict):
-            payload = {"draft_text": res.extracted.get("draft_text", "")}
-        default_state = "saved_draft" if capability_id in NOTES else "entered"
-        state = str(res.extracted.get("state") or default_state)
+        if isinstance(payload, dict):
+            normalized_payload: dict[str, Any] = dict(payload)
+        elif capability_id in ORDERS or capability_id == "maintain_order_sets":
+            table_key = str(binding.get("order_table_key") or "orders_table")
+            raw_table = res.extracted.get(table_key)
+            if not (isinstance(raw_table, Mapping) and isinstance(raw_table.get("rows"), list)):
+                raw_table = next(
+                    (val for val in res.extracted.values() if isinstance(val, Mapping) and isinstance(val.get("rows"), list)),
+                    None,
+                )
+            if isinstance(raw_table, Mapping):
+                normalized_payload = {
+                    "type": "observed_order_table",
+                    "rows": _normalize_order_rows(raw_table, binding),
+                }
+            else:
+                normalized_payload = {}
+        elif "draft_text" in res.extracted:
+            normalized_payload = {"draft_text": str(res.extracted.get("draft_text", ""))}
+        else:
+            normalized_payload = {}
+
         return VisibleObject(
-            subject=subject,
-            object_ref=str(res.extracted.get("object_ref") or object_ref),
-            state=state,
-            payload=payload,
+            subject=observed_subject,
+            object_ref=observed_ref,
+            state=observed_state,
+            payload=normalized_payload,
             screenshot_ref=shot_ref,
             trace_refs=tuple(t.trace_ref for t in res.traces),
             observed_at=res.observed_at,
@@ -194,19 +284,45 @@ class DeclarativeHospitalUI:
             params={"proposal_digest": task.proposal.digest},
         )
         raw_candidates = res.extracted.get("candidates")
-        if not isinstance(raw_candidates, list):
+        if isinstance(raw_candidates, Mapping) and isinstance(raw_candidates.get("rows"), list):
+            cand_rows = raw_candidates["rows"]
+        elif isinstance(raw_candidates, list):
+            cand_rows = raw_candidates
+        else:
             return ()
         shot_ref = res.screenshot_refs[-1] if res.screenshot_refs else self.driver.screenshot(label="reconcile")
         traces = tuple(t.trace_ref for t in res.traces)
+        default_obs_subject = _resolve_observed_subject(res, task.request.subject, strict=False)
         items: list[VisibleObject] = []
-        for cand in raw_candidates:
-            if not isinstance(cand, dict) or not cand.get("object_ref"):
+        for cand in cand_rows:
+            if not isinstance(cand, dict) or not str(cand.get("object_ref") or "").strip():
                 continue
+            cand_pat = cand.get("patient_id") or (cand.get("subject") or {}).get("patient_id")
+            cand_enc = cand.get("encounter_id") or (cand.get("subject") or {}).get("encounter_id")
+            if isinstance(cand_pat, str) and cand_pat.strip() and isinstance(cand_enc, str) and cand_enc.strip():
+                cand_subj = SubjectRef(task.request.subject.site_id, cand_pat.strip(), cand_enc.strip())
+            else:
+                cand_subj = default_obs_subject
+            cand_state = _normalize_state(cand.get("state"), binding.get("state_map"))
+            if not cand_state:
+                continue
+            raw_payload = cand.get("payload")
+            if isinstance(raw_payload, dict):
+                cand_payload = dict(raw_payload)
+            elif "rows" in cand and isinstance(cand.get("rows"), list):
+                cand_payload = {
+                    "type": "observed_order_table",
+                    "rows": _normalize_order_rows(cand, binding),
+                }
+            elif "draft_text" in cand:
+                cand_payload = {"draft_text": str(cand.get("draft_text", ""))}
+            else:
+                cand_payload = {}
             items.append(VisibleObject(
-                subject=task.request.subject,
-                object_ref=str(cand["object_ref"]),
-                state=str(cand.get("state") or "saved_draft"),
-                payload=dict(cand.get("payload") or {}),
+                subject=cand_subj,
+                object_ref=str(cand["object_ref"]).strip(),
+                state=cand_state,
+                payload=cand_payload,
                 screenshot_ref=str(cand.get("screenshot_ref") or shot_ref),
                 trace_refs=traces,
                 observed_at=res.observed_at,

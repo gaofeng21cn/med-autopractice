@@ -130,23 +130,111 @@ class UIClinicalSystem:
                 return {"draft": stripped}
         return None
 
+    @staticmethod
+    def _reconstruct_order_changes(visible_payload: dict, expected_payload: dict) -> dict | None:
+        """Verify an observed HIS order table row-by-row against expected order changes."""
+        exp_type = expected_payload.get("type")
+        expected_changes = expected_payload.get("changes")
+        if exp_type not in {"order_changes", "order_set"} or not isinstance(expected_changes, list) or not expected_changes:
+            return None
+        rows = visible_payload.get("rows")
+        if not isinstance(rows, list):
+            return None
+
+        active_states = {"entered", "active", "pending", "verified"}
+        stopped_states = {"stopped", "discontinued", "cancelled", "inactive"}
+        order_fields = ("dose", "unit", "route", "frequency", "instruction", "duration", "quantity")
+        used_indices: set[int] = set()
+        reconstructed_changes: list[dict[str, Any]] = []
+
+        for exp in expected_changes:
+            if not isinstance(exp, dict):
+                return None
+            action = exp.get("action")
+            code = str(exp.get("code") or "").strip()
+            target_ref = exp.get("target_ref")
+            if not code or action not in {"add", "change", "stop"}:
+                return None
+
+            matches: list[int] = []
+            for idx, row in enumerate(rows):
+                if idx in used_indices or not isinstance(row, dict):
+                    continue
+                row_code = str(row.get("code") or "").strip()
+                row_ref = str(row.get("object_ref") or "").strip()
+                row_status = str(row.get("status") or "").strip().lower()
+                if row_code != code:
+                    continue
+                if action == "stop":
+                    if target_ref and row_ref != str(target_ref):
+                        continue
+                    if row_status not in stopped_states:
+                        continue
+                    matches.append(idx)
+                    continue
+                if action == "change":
+                    if not target_ref or row_ref != str(target_ref):
+                        continue
+                elif target_ref and row_ref != str(target_ref):
+                    continue
+                if row_status not in active_states:
+                    continue
+                if str(row.get("action") or "").strip() == "stop":
+                    continue
+                fields_ok = True
+                for field in order_fields:
+                    if field in exp and exp[field] is not None:
+                        if str(row.get(field) or "").strip() != str(exp[field]).strip():
+                            fields_ok = False
+                            break
+                if fields_ok:
+                    matches.append(idx)
+
+            if not matches:
+                return None
+            if action in {"change", "stop"} and len(matches) != 1:
+                return None
+            used_indices.add(matches[0])
+            reconstructed_changes.append(dict(exp))
+
+        reconstructed: dict[str, Any] = {"type": exp_type, "changes": reconstructed_changes}
+        if exp_type == "order_set":
+            for meta_key in ("name", "version", "effective_on"):
+                if meta_key in expected_payload:
+                    if visible_payload.get(meta_key) != expected_payload[meta_key]:
+                        return None
+                    reconstructed[meta_key] = visible_payload[meta_key]
+        return reconstructed
+
+    @classmethod
+    def _match_visible_payload(cls, raw_payload: dict, expected_payload: dict) -> dict | None:
+        if raw_payload == expected_payload:
+            return raw_payload
+        if set(raw_payload) == {"draft_text"}:
+            return cls._reconstruct_from_draft_text(
+                str(raw_payload.get("draft_text", "")),
+                expected_payload,
+            )
+        if raw_payload.get("type") == "observed_order_table" or isinstance(raw_payload.get("rows"), list):
+            return cls._reconstruct_order_changes(raw_payload, expected_payload)
+        return None
+
     def read_back(self, receipt: ExecutionReceipt, task: Task) -> SystemReadback:
         visible = self.ui.open_object(
             task.request.subject, task.request.capability_id, receipt.object_ref,
         )
         digest = ""
         visible_payload = visible.payload
-        if task.proposal:
-            if visible.payload == task.proposal.payload:
+        if (
+            task.proposal
+            and visible.subject == task.request.subject
+            and visible.object_ref == receipt.object_ref
+            and visible.state
+        ):
+            matched = self._match_visible_payload(visible.payload, task.proposal.payload)
+            if matched is not None and matched == task.proposal.payload:
                 digest = task.proposal.digest
-            elif set(visible.payload) == {"draft_text"}:
-                matched = self._reconstruct_from_draft_text(
-                    str(visible.payload.get("draft_text", "")),
-                    task.proposal.payload,
-                )
-                if matched is not None and matched == task.proposal.payload:
-                    digest = task.proposal.digest
-                    visible_payload = matched
+                visible_payload = matched
         return SystemReadback(
             visible.subject, visible.object_ref, digest, visible.state,
             visible.screenshot_ref, visible.trace_refs, visible_payload,
@@ -156,10 +244,14 @@ class UIClinicalSystem:
     def find_submission(self, task: Task) -> ExecutionReceipt | None:
         if task.proposal is None:
             return None
-        exact = [item for item in self.ui.find_candidates(task)
-                 if item.subject == task.request.subject
-                 and item.payload == task.proposal.payload
-                 and item.object_ref and item.trace_refs and item.screenshot_ref]
+        exact: list[VisibleObject] = []
+        for item in self.ui.find_candidates(task):
+            if (item.subject != task.request.subject
+                    or not item.object_ref or not item.trace_refs or not item.screenshot_ref):
+                continue
+            matched = self._match_visible_payload(item.payload, task.proposal.payload)
+            if matched is not None and matched == task.proposal.payload:
+                exact.append(item)
         if len(exact) != 1:
             return None
         item = exact[0]

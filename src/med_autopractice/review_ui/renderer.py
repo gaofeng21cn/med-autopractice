@@ -14,7 +14,9 @@ _ASSET_PATH = Path(__file__).resolve().parent / "assets" / "review_app.html"
 def build_review_card_model(task_view: Mapping[str, Any]) -> dict[str, Any]:
     """Extract normalized card view-model from a TaskRuntime view dictionary."""
     req = task_view.get("request") or {}
-    subject = req.get("subject") or {}
+    subject = task_view.get("subject") or req.get("subject") or {}
+    capability_id = task_view.get("capability_id") or req.get("capability_id")
+    intent = task_view.get("intent") or req.get("intent") or req.get("goal")
     snapshot = task_view.get("snapshot") or {}
     proposal = task_view.get("proposal") or {}
     execution = task_view.get("execution") or {}
@@ -39,8 +41,8 @@ def build_review_card_model(task_view: Mapping[str, Any]) -> dict[str, Any]:
         "task_id": task_view.get("task_id"),
         "status": status,
         "next_action": task_view.get("next_action"),
-        "capability_id": req.get("capability_id"),
-        "intent": req.get("intent") or req.get("goal"),
+        "capability_id": capability_id,
+        "intent": intent,
         "subject": {
             "site_id": subject.get("site_id"),
             "patient_id": subject.get("patient_id"),
@@ -48,6 +50,8 @@ def build_review_card_model(task_view: Mapping[str, Any]) -> dict[str, Any]:
         },
         "snapshot_revision": snapshot.get("revision"),
         "coverage": snapshot.get("coverage", []),
+        "missing_information": list(task_view.get("missing_information") or ()),
+        "required_input": list(task_view.get("required_input") or ()),
         "facts": facts,
         "proposal": {
             "digest": proposal.get("digest"),
@@ -60,7 +64,10 @@ def build_review_card_model(task_view: Mapping[str, Any]) -> dict[str, Any]:
             "object_ref": receipt.get("object_ref") or readback.get("object_ref"),
             "receipt_state": receipt.get("state"),
             "readback_state": readback.get("state"),
+            "readback_subject": readback.get("subject"),
             "readback_digest": readback.get("proposal_digest"),
+            "readback_visible_payload": readback.get("visible_payload"),
+            "readback_trace_refs": list(readback.get("trace_refs") or ()),
             "screenshot_ref": readback.get("screenshot_ref"),
             "resource_version_ref": readback.get("resource_version_ref"),
             "observed_at": readback.get("observed_at"),
@@ -68,7 +75,9 @@ def build_review_card_model(task_view: Mapping[str, Any]) -> dict[str, Any]:
         "available_actions": {
             "can_submit": status in {"needs_pre_submit_review", "ready_to_submit"} and bool(proposal.get("digest")),
             "can_accept": status == "needs_clinician_acceptance",
-            "can_revise": status in {"needs_pre_submit_review", "ready_to_submit", "needs_clinician_acceptance", "draft_only"},
+            "can_revise": status in {"needs_pre_submit_review", "ready_to_submit", "needs_clinician_acceptance", "draft_only", "changes_requested"},
+            "can_reconcile": status == "execution_uncertain",
+            "can_refresh": status in {"needs_refresh", "needs_information", "draft_only"},
             "can_cancel": status not in {"accepted", "cancelled", "rejected"},
         },
     }
