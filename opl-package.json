@@ -91,6 +91,29 @@
         "--inspect"
       ],
       "read_only": true
+    },
+    {
+      "entrypoint_id": "med-autopractice.mcp",
+      "kind": "cli",
+      "argv": [
+        "python3",
+        "scripts/map_mcp.py",
+        "--mode",
+        "synthetic",
+        "--transport",
+        "stdio"
+      ],
+      "scope": "synthetic_only"
+    },
+    {
+      "entrypoint_id": "med-autopractice.site-sync",
+      "kind": "cli",
+      "argv": [
+        "python3",
+        "scripts/site_sync.py",
+        "--help"
+      ],
+      "read_only": true
     }
   ],
   "codex_surface": {
@@ -144,12 +167,14 @@
       "plugin.json",
       "pyproject.toml",
       "rules/README.md",
+      "scripts/build_offline_bundle.py",
       "scripts/kvm_status.py",
       "scripts/map_knowledge.py",
       "scripts/map_mcp.py",
       "scripts/map_runtime.py",
       "scripts/package_metadata.py",
       "scripts/project_status.py",
+      "scripts/site_metrics.py",
       "scripts/site_plan.py",
       "scripts/site_playbook.py",
       "scripts/site_qualify.py",
@@ -176,6 +201,7 @@
       "src/med_autopractice/adapters/middleware_rest.py",
       "src/med_autopractice/adapters/playbook_runner.py",
       "src/med_autopractice/adapters/ports.py",
+      "src/med_autopractice/adapters/session_guard.py",
       "src/med_autopractice/adapters/synthetic.py",
       "src/med_autopractice/agent/__init__.py",
       "src/med_autopractice/agent/task_engine.py",
@@ -200,8 +226,12 @@
       "src/med_autopractice/review_ui/renderer.py",
       "src/med_autopractice/review_ui/server.py",
       "src/med_autopractice/runtime.py",
+      "src/med_autopractice/storage/__init__.py",
+      "src/med_autopractice/storage/crypto.py",
+      "src/med_autopractice/storage/retention.py",
       "src/med_autopractice/workflows/__init__.py",
       "src/med_autopractice/workflows/catalog.py",
+      "src/med_autopractice/workflows/metrics.py",
       "src/med_autopractice/workflows/site_plan.py",
       "src/med_autopractice/workflows/site_playbook.py",
       "src/med_autopractice/workflows/site_qualify.py",
@@ -237,7 +267,7 @@
       "examples/synthetic/local_provider.py",
       "examples/synthetic/local_deployment.py"
     ],
-    "digest": "sha256:3b765fffc38a3b1d5a6fcce0e8d62f561b646af9ec00599bde5541106333e09f"
+    "digest": "sha256:0a289df3cf1c40e724ea8ee5a8d3e58625bae6c3135e20a0596134f079694a62"
   },
   "management_scope": "local_product"
 }
