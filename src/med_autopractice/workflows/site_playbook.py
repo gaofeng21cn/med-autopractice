@@ -14,11 +14,19 @@ from pathlib import Path
 from typing import Any
 
 
-_PRIMITIVES = {
+_SCHEMA_VERSIONS = {"map-site-playbook.v1", "map-site-playbook.v2"}
+_V1_PRIMITIVES = {
     "kvm_observe", "kvm_wait", "kvm_click", "kvm_double_click", "kvm_type_ascii",
     "kvm_keys", "kvm_scroll", "kvm_drag", "browser_autofill_select",
     "human_action", "human_handoff",
 }
+_V2_PRIMITIVES = {
+    "observe", "locate", "click", "double_click", "keys",
+    "input_text", "select_option", "wait_state",
+    "read_text", "read_table", "scroll_collect",
+    "verify_subject", "handle_dialog", "capture_evidence", "human_handoff",
+}
+_PRIMITIVES = _V1_PRIMITIVES | _V2_PRIMITIVES
 _EFFECTS = {"read_only", "draft_write", "reviewed_write"}
 _FAILURES = {"stop", "retry_once", "handoff", "reobserve"}
 _EVIDENCE = {"none", "ref", "screenshot_ref"}
@@ -44,6 +52,12 @@ class PlaybookStep:
     state: str
     evidence: str
     notes_ref: str | None
+    selector: str | None = None
+    text_param: str | None = None
+    extract_key: str | None = None
+    max_pages: int | None = None
+    dialog_rules: tuple[dict[str, Any], ...] = ()
+    scope: str | None = None
 
     @property
     def is_write(self) -> bool:
@@ -110,19 +124,30 @@ def _parse_step(document: dict[str, Any]) -> PlaybookStep:
             or not isinstance(document.get("intent"), str) or not document["intent"]
             or not isinstance(document.get("expect_text"), str) or not document["expect_text"]):
         raise ValueError(f"invalid playbook step: {step_id!r}")
+    max_pages = document.get("max_pages")
+    if max_pages is not None and (type(max_pages) is not int or max_pages < 1 or max_pages > 100):
+        raise ValueError(f"invalid max_pages in step: {step_id!r}")
+    dialog_rules = document.get("dialog_rules") or ()
+    if not isinstance(dialog_rules, (list, tuple)) or any(not isinstance(r, dict) for r in dialog_rules):
+        raise ValueError(f"invalid dialog_rules in step: {step_id!r}")
     return PlaybookStep(
         step_id, document["intent"], document["primitive"], document.get("target"),
         tuple(region) if region else None, document["expect_text"],
         document["effect"], document["on_failure"], document.get("state", "unverified"),
         document.get("evidence", "none"), document.get("notes_ref"),
+        selector=document.get("selector"), text_param=document.get("text_param"),
+        extract_key=document.get("extract_key"), max_pages=max_pages,
+        dialog_rules=tuple(dialog_rules), scope=document.get("scope"),
     )
 
 
 class SitePlaybook:
     def __init__(self, document: dict[str, Any], known_systems: set[str] | None = None):
         _reject_forbidden(document)
-        if document.get("schema_version") != "map-site-playbook.v1":
+        schema_version = document.get("schema_version")
+        if schema_version not in _SCHEMA_VERSIONS:
             raise ValueError("unsupported site playbook")
+        self.schema_version = schema_version
         systems = document.get("systems")
         steps = document.get("steps")
         if (not isinstance(document.get("playbook_id"), str) or not document["playbook_id"]
@@ -190,6 +215,11 @@ def write_plan(playbook: Playbook) -> dict:
                 "state": step.state,
                 "evidence": step.evidence,
                 "notes_ref": step.notes_ref,
+                **({"selector": step.selector} if step.selector else {}),
+                **({"text_param": step.text_param} if step.text_param else {}),
+                **({"extract_key": step.extract_key} if step.extract_key else {}),
+                **({"max_pages": step.max_pages} if step.max_pages is not None else {}),
+                **({"scope": step.scope} if step.scope else {}),
             }
             for step in playbook.steps
         ],

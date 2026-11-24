@@ -8,7 +8,9 @@ import sys
 from types import ModuleType
 
 from med_autopractice.adapters.composite import _DEPENDENCY_SCOPE_HINTS
+from med_autopractice.adapters.declarative_ui import DeclarativeHospitalUI
 from med_autopractice.adapters.ports import SiteProvider
+from med_autopractice.adapters.ui import UIClinicalSystem, UIProfile
 from med_autopractice.agent.task_engine import TaskEngine
 from med_autopractice.agent.task_store import SqliteTaskStore
 from med_autopractice.domain.task import Proposal, Snapshot, SourceCoverage, TaskPolicy
@@ -18,6 +20,7 @@ from med_autopractice.runtime import TaskRuntime
 from med_autopractice.workflows.catalog import LOCAL_WORKFLOWS
 from med_autopractice.workflows import results
 from med_autopractice.workflows.site_plan import SiteCatalog
+from med_autopractice.workflows.site_playbook import SitePlaybook
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -127,13 +130,72 @@ def _private_file(path: Path) -> bytes:
     return verify_private_file(path)
 
 
-def build_site_runtime(directory: Path) -> TaskRuntime:
-    """Load a trusted provider from a user-selected deployment, never from request data."""
+class _DeclarativeSiteProvider:
+    """Adapter bridge allowing sites without custom provider.py to run via Playbooks."""
+
+    def __init__(self, ui_system: UIClinicalSystem, config: dict):
+        self.ui_system = ui_system
+        self.allowed_authority = config.get("authority_ref")
+        self.clinicians = set(config.get("authorized_clinicians", ()))
+
+    def authorize(self, action, request, decision):
+        if request.subject.site_id != self.ui_system.ui.profile.site_id:
+            return False
+        if self.allowed_authority and request.authority_ref != self.allowed_authority:
+            return False
+        if action in {"read", "reconcile"}:
+            return True
+        if not decision or not decision.clinician_id:
+            return False
+        return not self.clinicians or decision.clinician_id in self.clinicians
+
+    def read_context(self, subject, capability_id):
+        return self.ui_system.read_context(subject, capability_id)
+
+    def can_apply(self, proposal):
+        return self.ui_system.can_apply(proposal)
+
+    def apply_bound(self, request, proposal, revision, idempotency_key, existing_object_ref, approval):
+        if not self.authorize("submit", request, approval):
+            raise PermissionError("clinician authorization required")
+        return self.ui_system.apply(proposal, idempotency_key, existing_object_ref)
+
+    def read_back(self, receipt, task):
+        return self.ui_system.read_back(receipt, task)
+
+    def find_submission(self, task):
+        return self.ui_system.find_submission(task)
+
+
+def _build_driver(driver_cfg: dict, evidence_dir: Path):
+    kind = driver_cfg.get("kind")
+    if kind == "windows_uia":
+        from med_autopractice.adapters.drivers.desktop_win import WindowsUIADriver
+
+        return WindowsUIADriver(screenshot_dir=evidence_dir)
+    if kind == "browser_cdp":
+        from med_autopractice.adapters.drivers.browser_cdp import BrowserCDPDriver
+
+        return BrowserCDPDriver(cdp_url=driver_cfg.get("cdp_url", "http://127.0.0.1:9222"), screenshot_dir=evidence_dir)
+    if kind == "ip_kvm":
+        from med_autopractice.adapters.drivers.kvm_driver import KVMUIDriver
+
+        return KVMUIDriver.from_config(driver_cfg, screenshot_dir=evidence_dir)
+    raise ValueError(f"unsupported declarative driver kind: {kind!r}")
+
+
+def build_site_runtime(
+    directory: Path,
+    *,
+    driver=None,
+) -> TaskRuntime:
+    """Load a trusted provider (or declarative driver + Playbooks) from a private deployment."""
     directory = _private_directory(directory)
     config_bytes = _private_file(directory / "deployment.json")
     profile_bytes = _private_file(directory / "dependencies.json")
     provider_path = directory / "provider.py"
-    provider_bytes = _private_file(provider_path)
+    has_provider = provider_path.exists()
+    provider_bytes = _private_file(provider_path) if has_provider else b""
     config = json.loads(config_bytes)
     if not isinstance(config, dict) or config.get("schema_version") != "map-local-deployment.v1":
         raise ValueError("unsupported local deployment descriptor")
@@ -145,7 +207,11 @@ def build_site_runtime(directory: Path) -> TaskRuntime:
     rules = config.get("rules", {})
     if not isinstance(capabilities, dict) or not capabilities or not isinstance(rules, dict):
         raise ValueError("deployment needs explicit capabilities and rules")
-    revision = sha256(b"\x00".join((config_bytes, profile_bytes, provider_bytes))).hexdigest()
+    playbook_hashes: list[bytes] = []
+    if not has_provider and (directory / "playbooks").is_dir():
+        for pfile in sorted((directory / "playbooks").glob("*.json")):
+            playbook_hashes.append(_private_file(pfile))
+    revision = sha256(b"\x00".join((config_bytes, profile_bytes, provider_bytes, *playbook_hashes))).hexdigest()
     policies = {}
     for capability, state in capabilities.items():
         workflow = LOCAL_WORKFLOWS.get(capability)
@@ -168,22 +234,48 @@ def build_site_runtime(directory: Path) -> TaskRuntime:
         if workflow.write_dependency:
             policy = replace(policy, requires_pre_submit_review=True)
         policies[capability] = replace(policy, deployment_revision=revision)
-    module_name = f"_map_site_provider_{revision}"
-    module = ModuleType(module_name)
-    module.__file__ = str(provider_path)
-    sys.modules[module_name] = module
-    try:
-        exec(compile(provider_bytes, str(provider_path), "exec"), module.__dict__)
-        factory = getattr(module, "build_provider", None)
-        if not callable(factory):
-            raise ValueError("deployment provider needs build_provider(directory)")
-        provider = factory(directory)
-    except Exception:
-        sys.modules.pop(module_name, None)
-        raise
-    for method in ("authorize", "read_context", "can_apply", "apply_bound", "read_back", "find_submission"):
-        if not callable(getattr(provider, method, None)):
-            raise ValueError(f"deployment provider must implement {method}")
+
+    if has_provider:
+        module_name = f"_map_site_provider_{revision}"
+        module = ModuleType(module_name)
+        module.__file__ = str(provider_path)
+        sys.modules[module_name] = module
+        try:
+            exec(compile(provider_bytes, str(provider_path), "exec"), module.__dict__)
+            factory = getattr(module, "build_provider", None)
+            if not callable(factory):
+                raise ValueError("deployment provider needs build_provider(directory)")
+            provider = factory(directory)
+        except Exception:
+            sys.modules.pop(module_name, None)
+            raise
+        for method in ("authorize", "read_context", "can_apply", "apply_bound", "read_back", "find_submission"):
+            if not callable(getattr(provider, method, None)):
+                raise ValueError(f"deployment provider must implement {method}")
+    else:
+        driver_cfg = config.get("driver")
+        bindings = config.get("playbooks")
+        ui_cfg = config.get("ui_profile", {})
+        if not isinstance(driver_cfg, dict) or not isinstance(bindings, dict):
+            raise ValueError("deployment needs provider.py or declarative driver and playbooks configuration")
+        playbooks_dir = directory / "playbooks"
+        loaded_books = {book.playbook_id: book for book in SitePlaybook.load_directory(playbooks_dir)}
+        profile = UIProfile(
+            site_id=site_id,
+            product=text(ui_cfg.get("product", "declarative-his"), "UI product"),
+            version=text(ui_cfg.get("version", "1"), "UI version"),
+            role=text(ui_cfg.get("role", "clinician"), "UI role"),
+            display_size=tuple(ui_cfg.get("display_size", (1280, 720))),
+            qualification_ref=text(ui_cfg.get("qualification_ref", f"site://{site_id}/ui"), "qualification ref"),
+            write_capabilities=frozenset(ui_cfg.get("write_capabilities", ())),
+            long_text_qualified=bool(ui_cfg.get("long_text_qualified", False)),
+        )
+        evidence_dir = directory / "evidence"
+        evidence_dir.mkdir(exist_ok=True)
+        active_driver = driver if driver is not None else _build_driver(driver_cfg, evidence_dir)
+        ui = DeclarativeHospitalUI(profile, active_driver, loaded_books, bindings)
+        provider = _DeclarativeSiteProvider(UIClinicalSystem(ui), config)
+
     read_mode = config.get("read_mode", "strict")
     system = QualifiedSystem(provider, catalog, read_mode=read_mode)
     store = SqliteTaskStore(directory / "tasks.sqlite", site_id=site_id)

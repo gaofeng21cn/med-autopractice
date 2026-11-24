@@ -115,7 +115,44 @@ class SitePlaybookTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             SitePlaybook(playbook(steps=[step("dup"), step("dup")]))
         with self.assertRaises(ValueError):
-            SitePlaybook(playbook(schema_version="map-site-playbook.v2"))
+            SitePlaybook(playbook(schema_version="map-site-playbook.v99"))
+
+    def test_v2_transport_agnostic_playbook_is_supported(self):
+        v2 = playbook(
+            schema_version="map-site-playbook.v2",
+            steps=[
+                step(
+                    "bind",
+                    primitive="verify_subject",
+                    selector="#patient-banner",
+                    expect_text="住院号",
+                ),
+                step(
+                    "collect_labs",
+                    primitive="scroll_collect",
+                    selector="table.labs",
+                    extract_key="labs",
+                    scope="results",
+                    max_pages=5,
+                    expect_text="检验结果",
+                ),
+                step(
+                    "write_note",
+                    primitive="input_text",
+                    selector="textarea#note",
+                    text_param="draft_text",
+                    effect="draft_write",
+                    expect_text="已保存",
+                ),
+            ],
+        )
+        parsed = SitePlaybook(v2, {"portal"})
+        self.assertEqual(parsed.schema_version, "map-site-playbook.v2")
+        self.assertEqual(parsed.playbook.steps[1].max_pages, 5)
+        self.assertEqual(parsed.playbook.steps[2].text_param, "draft_text")
+        self.assertTrue(parsed.playbook.contains_write)
+        plan = write_plan(parsed.playbook)
+        self.assertEqual(plan["steps"][1]["extract_key"], "labs")
 
     def test_playbook_must_reference_surveyed_systems(self):
         with self.assertRaisesRegex(ValueError, "absent from the site survey"):

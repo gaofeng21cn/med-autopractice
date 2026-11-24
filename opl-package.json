@@ -123,6 +123,7 @@
       "contracts/durable_knowledge_catalog.json",
       "contracts/site-dependencies.json",
       "contracts/site-playbook.schema.json",
+      "contracts/site-playbook.v2.schema.json",
       "contracts/site-survey.schema.json",
       "contracts/structured-clinical-record.schema.json",
       "docs/agent-contract.md",
@@ -147,6 +148,7 @@
       "scripts/site_plan.py",
       "scripts/site_playbook.py",
       "scripts/site_survey.py",
+      "scripts/site_sync.py",
       "scripts/structure_record.py",
       "skills/map-site-adaptation/SKILL.md",
       "skills/map-site-adaptation/agents/openai.yaml",
@@ -155,7 +157,15 @@
       "src/med_autopractice/__init__.py",
       "src/med_autopractice/adapters/__init__.py",
       "src/med_autopractice/adapters/composite.py",
+      "src/med_autopractice/adapters/declarative_ui.py",
+      "src/med_autopractice/adapters/drivers/__init__.py",
+      "src/med_autopractice/adapters/drivers/browser_cdp.py",
+      "src/med_autopractice/adapters/drivers/desktop_win.py",
+      "src/med_autopractice/adapters/drivers/kvm_driver.py",
+      "src/med_autopractice/adapters/drivers/ocr.py",
+      "src/med_autopractice/adapters/drivers/text_entry.py",
       "src/med_autopractice/adapters/kvm.py",
+      "src/med_autopractice/adapters/playbook_runner.py",
       "src/med_autopractice/adapters/ports.py",
       "src/med_autopractice/adapters/synthetic.py",
       "src/med_autopractice/agent/__init__.py",
@@ -179,6 +189,7 @@
       "src/med_autopractice/workflows/site_plan.py",
       "src/med_autopractice/workflows/site_playbook.py",
       "src/med_autopractice/workflows/site_survey.py",
+      "src/med_autopractice/workflows/site_sync.py",
       ".github/workflows/ci.yml",
       "CODE_OF_CONDUCT.md",
       "CONTRIBUTING.md",
@@ -210,7 +221,7 @@
       "examples/synthetic/local_deployment.py",
       "docs/local-deployment.md"
     ],
-    "digest": "sha256:b65c807794ff40118a794bf4e95e5db7ce4f3d37ad4f1e4fe6fd88dbc48ba3b4"
+    "digest": "sha256:901a776c86aa8010380ebe531e1bc0845e1da84c5211e7e2dc00ad938248c567"
   },
   "management_scope": "local_product"
 }
