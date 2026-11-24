@@ -11,12 +11,29 @@ permissions:
 
 jobs:
   test:
-    name: Python ${{ matrix.python-version }}
-    runs-on: ubuntu-latest
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ['3.10', '3.11', '3.12']
+        include:
+          - os: ubuntu-latest
+            python-version: '3.10'
+            release-check: 'false'
+          - os: ubuntu-latest
+            python-version: '3.11'
+            release-check: 'false'
+          - os: ubuntu-latest
+            python-version: '3.12'
+            release-check: 'true'
+          - os: macos-latest
+            python-version: '3.12'
+            release-check: 'false'
+          - os: windows-latest
+            python-version: '3.12'
+            release-check: 'false'
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -28,16 +45,19 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Verify public release boundary
+        if: matrix.release-check == 'true'
         run: python scripts/public_release_check.py
       - name: Verify package metadata
-        run: python3 scripts/package_metadata.py
+        run: python scripts/package_metadata.py
       - name: Inspect project
-        run: python3 scripts/project_status.py --json
+        run: python scripts/project_status.py --json
       - name: Inspect generic site plan
-        run: python3 scripts/site_plan.py revise_orders
+        run: python scripts/site_plan.py revise_orders
       - name: Run the custom proposer example
-        run: python3 examples/synthetic/custom_proposer.py
+        run: python examples/synthetic/custom_proposer.py
       - name: Run the loopback FHIR example
-        run: python3 examples/synthetic/fhir_read.py
+        run: python examples/synthetic/fhir_read.py
       - name: Run tests
-        run: PYTHONPATH=src python3 -m unittest discover -s tests -v
+        env:
+          PYTHONPATH: src
+        run: python -m unittest discover -s tests -v

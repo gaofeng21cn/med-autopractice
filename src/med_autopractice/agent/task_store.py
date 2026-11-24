@@ -6,15 +6,15 @@ from contextlib import contextmanager
 from dataclasses import asdict
 from hashlib import sha256
 import json
-import os
 from pathlib import Path
 import sqlite3
-import stat
 
 from med_autopractice.domain.task import (
     AuditEvent, ExecutionReceipt, Fact, Proposal, ReviewDecision, Snapshot,
     SourceCoverage, SubjectRef, SystemReadback, Task, TaskPolicy, TaskRequest,
 )
+from med_autopractice.platform.locking import exclusive_file_lock
+from med_autopractice.platform.security import open_private_rw
 
 
 class ConcurrentTaskUpdate(RuntimeError):
@@ -35,6 +35,20 @@ class InMemoryTaskStore:
     def get_by_request(self, request_id: str) -> Task | None:
         task_id = self.requests.get(request_id)
         return self.tasks.get(task_id) if task_id else None
+
+    def list_tasks(
+        self, *, status: str | None = None, patient_id: str | None = None, limit: int = 50
+    ) -> list[Task]:
+        results: list[Task] = []
+        for task in reversed(list(self.tasks.values())):
+            if status is not None and task.status != status:
+                continue
+            if patient_id is not None and task.request.subject.patient_id != patient_id:
+                continue
+            results.append(task)
+            if len(results) >= limit:
+                break
+        return results
 
     def save(self, task: Task) -> None:
         existing = self.requests.get(task.request.request_id)
@@ -115,13 +129,7 @@ class SqliteTaskStore:
     def __init__(self, path: Path, *, site_id: str | None = None):
         self.site_id = site_id
         self.path = path
-        fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0), 0o600)
-        try:
-            identity = os.fstat(fd)
-            if not stat.S_ISREG(identity.st_mode) or identity.st_uid != os.getuid() or stat.S_IMODE(identity.st_mode) & 0o077:
-                raise PermissionError("task database must be private to its owner")
-        finally:
-            os.close(fd)
+        open_private_rw(path)
         connection = sqlite3.connect(path)
         try:
             connection.execute(
@@ -151,18 +159,11 @@ class SqliteTaskStore:
         if not self.site_id:
             yield
             return
-        import fcntl
-
         # Keep the whole target operation single-writer. SQLite CAS still protects each commit.
         lock_dir = self.path.parent / ".operations"
-        lock_dir.mkdir(mode=0o700, exist_ok=True)
         name = sha256(task_id.encode()).hexdigest()
-        lock = os.open(lock_dir / name, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        with exclusive_file_lock(lock_dir / name):
             yield
-        finally:
-            os.close(lock)
 
     def _read(self, column: str, value: str) -> Task | None:
         query = {
@@ -185,6 +186,29 @@ class SqliteTaskStore:
 
     def get_by_request(self, request_id: str) -> Task | None:
         return self._read("request_id", request_id)
+
+    def list_tasks(
+        self, *, status: str | None = None, patient_id: str | None = None, limit: int = 50
+    ) -> list[Task]:
+        if limit < 1:
+            return []
+        connection = sqlite3.connect(self.path)
+        try:
+            rows = connection.execute("SELECT body FROM tasks ORDER BY rowid DESC").fetchall()
+        finally:
+            connection.close()
+        results: list[Task] = []
+        for (body,) in rows:
+            task = _task_from_json(body)
+            self.validate_request(task.request)
+            if status is not None and task.status != status:
+                continue
+            if patient_id is not None and task.request.subject.patient_id != patient_id:
+                continue
+            results.append(task)
+            if len(results) >= limit:
+                break
+        return results
 
     def validate_request(self, request: TaskRequest) -> None:
         subject = request.subject

@@ -87,6 +87,47 @@ class TaskEngine:
         self._require_access("read", task.effective_request)
         return task
 
+    def list_tasks(
+        self, *, status: str | None = None, patient_id: str | None = None, limit: int = 50
+    ) -> list[Task]:
+        tasks = self.store.list_tasks(status=status, patient_id=patient_id, limit=limit)
+        if self.authorize is None:
+            return tasks
+        return [
+            task for task in tasks
+            if self.authorize("read", task.effective_request, None) is True
+        ]
+
+    def cancel(self, task_id: str, reason: str, *, clinician_id: str | None = None) -> Task:
+        task = self.get(task_id)
+        if not isinstance(reason, str) or not reason.strip():
+            raise ValueError("cancellation reason is required")
+        if task.status in {"execution_uncertain", "accepted", "cancelled"}:
+            raise ValueError(f"cannot cancel task in {task.status} state")
+        if clinician_id is not None:
+            decision = ClinicianApproval(
+                task_id,
+                clinician_id,
+                task.prepared_digest or "cancelled",
+                task.snapshot.revision if task.snapshot else "none",
+            )
+            self._require_access("cancel", task.effective_request, decision)
+        previous_status = task.status
+        previous_feedback = task.review_feedback
+        cleaned_reason = reason.strip()
+        task.status = "cancelled"
+        task.review_feedback = cleaned_reason
+        refs = (sha256(cleaned_reason.encode("utf-8")).hexdigest(),)
+        if clinician_id is not None:
+            refs = (clinician_id, *refs)
+        try:
+            self._event(task, "cancel", "cancelled", refs)
+        except Exception:
+            task.status = previous_status
+            task.review_feedback = previous_feedback
+            raise
+        return task
+
     def _event(
         self, task: Task, action: str, outcome: str,
         refs: tuple[str, ...] = (), screenshot_ref: str | None = None,

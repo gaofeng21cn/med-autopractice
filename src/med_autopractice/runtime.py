@@ -39,6 +39,7 @@ NEXT_ACTION = {
     "needs_clinician_acceptance": "obtain_clinician_acceptance",
     "changes_requested": "revise_proposal",
     "accepted": "complete",
+    "cancelled": "closed",
     "review_result": "review_read_only_result",
     "collecting": "refresh_task",
 }
@@ -103,6 +104,27 @@ class TaskRuntime:
 
     def show(self, task_id: str) -> dict:
         return self.view(self.engine.get(task_id))
+
+    def list_tasks(
+        self, *, status: str | None = None, patient_id: str | None = None, limit: int = 50
+    ) -> list[dict]:
+        return [
+            {
+                "task_id": task.task_id,
+                "request_id": task.request.request_id,
+                "capability_id": task.request.capability_id,
+                "intent": task.request.intent,
+                "status": task.status,
+                "next_action": NEXT_ACTION.get(task.status, "inspect_task"),
+                "subject": asdict(task.request.subject),
+                "revision": task.revision,
+            }
+            for task in self.engine.list_tasks(status=status, patient_id=patient_id, limit=limit)
+        ]
+
+    def cancel(self, task_id: str, reason: str, *, clinician_id: str | None = None) -> dict:
+        with self._operation(task_id):
+            return self.view(self.engine.cancel(task_id, reason, clinician_id=clinician_id))
 
     def _operation(self, task_id: str):
         operation = getattr(self.engine.store, "operation", None)

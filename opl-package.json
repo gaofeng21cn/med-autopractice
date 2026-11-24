@@ -154,6 +154,7 @@
       "skills/med-autopractice/agents/openai.yaml",
       "src/med_autopractice/__init__.py",
       "src/med_autopractice/adapters/__init__.py",
+      "src/med_autopractice/adapters/composite.py",
       "src/med_autopractice/adapters/kvm.py",
       "src/med_autopractice/adapters/ports.py",
       "src/med_autopractice/adapters/synthetic.py",
@@ -163,6 +164,9 @@
       "src/med_autopractice/domain/__init__.py",
       "src/med_autopractice/domain/task.py",
       "src/med_autopractice/knowledge.py",
+      "src/med_autopractice/platform/__init__.py",
+      "src/med_autopractice/platform/locking.py",
+      "src/med_autopractice/platform/security.py",
       "src/med_autopractice/medicine/__init__.py",
       "src/med_autopractice/medicine/ports.py",
       "src/med_autopractice/medicine/router.py",
@@ -206,7 +210,7 @@
       "examples/synthetic/local_deployment.py",
       "docs/local-deployment.md"
     ],
-    "digest": "sha256:ab26ce261899f0df6fb01020fef1f0348e752330816534f53cf3a126426d124b"
+    "digest": "sha256:b65c807794ff40118a794bf4e95e5db7ce4f3d37ad4f1e4fe6fd88dbc48ba3b4"
   },
   "management_scope": "local_product"
 }

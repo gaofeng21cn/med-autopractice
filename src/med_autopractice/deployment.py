@@ -3,17 +3,17 @@
 from dataclasses import replace
 from hashlib import sha256
 import json
-import os
 from pathlib import Path
-import stat
 import sys
 from types import ModuleType
 
+from med_autopractice.adapters.composite import _DEPENDENCY_SCOPE_HINTS
 from med_autopractice.adapters.ports import SiteProvider
 from med_autopractice.agent.task_engine import TaskEngine
 from med_autopractice.agent.task_store import SqliteTaskStore
-from med_autopractice.domain.task import Proposal, TaskPolicy
+from med_autopractice.domain.task import Proposal, Snapshot, SourceCoverage, TaskPolicy
 from med_autopractice.medicine.proposals import NOTES, ORDERS, make_note, make_orders, text
+from med_autopractice.platform.security import verify_private_directory, verify_private_file
 from med_autopractice.runtime import TaskRuntime
 from med_autopractice.workflows.catalog import LOCAL_WORKFLOWS
 from med_autopractice.workflows import results
@@ -51,18 +51,52 @@ class SiteKnowledge:
 class QualifiedSystem:
     """Gate the write/readback pair on the private dependency catalog."""
 
-    def __init__(self, provider: SiteProvider, catalog: SiteCatalog):
+    def __init__(self, provider: SiteProvider, catalog: SiteCatalog, *, read_mode: str = "strict"):
+        if read_mode not in {"strict", "partial_draft_allowed"}:
+            raise ValueError(f"unsupported read_mode: {read_mode}")
         self.provider = provider
         self.catalog = catalog
+        self.read_mode = read_mode
 
     def read_context(self, subject, capability_id):
         workflow = LOCAL_WORKFLOWS[capability_id]
-        dependencies = (*workflow.read_dependencies, *workflow.rule_dependencies)
+        non_read_dependencies = list(workflow.rule_dependencies)
         if workflow.medical_proposal:
-            dependencies += ("clinical_proposal",)
-        if not self.catalog.qualified(*dependencies):
+            non_read_dependencies.append("clinical_proposal")
+        if non_read_dependencies and not self.catalog.qualified(*non_read_dependencies):
             raise PermissionError("deployment has unresolved read or rule dependencies")
-        return self.provider.read_context(subject, capability_id)
+        unqualified = [dep for dep in workflow.read_dependencies if not self.catalog.qualified(dep)]
+        if unqualified and self.read_mode == "strict":
+            raise PermissionError("deployment has unresolved read or rule dependencies")
+        snapshot = self.provider.read_context(subject, capability_id)
+        if not unqualified:
+            return snapshot
+        blocked_scopes = {_DEPENDENCY_SCOPE_HINTS.get(dep, dep) for dep in unqualified}
+        updated_coverage = []
+        seen_scopes: set[str] = set()
+        for item in snapshot.coverage:
+            seen_scopes.add(item.scope)
+            if item.complete and item.scope in blocked_scopes:
+                updated_coverage.append(
+                    SourceCoverage(item.source_system, item.scope, False, (*item.gaps, "unqualified_dependency"))
+                )
+            else:
+                updated_coverage.append(item)
+        for dep in unqualified:
+            scope = _DEPENDENCY_SCOPE_HINTS.get(dep, dep)
+            if scope not in seen_scopes:
+                updated_coverage.append(
+                    SourceCoverage("site-readiness", scope, False, (f"unqualified:{dep}",))
+                )
+                seen_scopes.add(scope)
+        suffix = sha256(",".join(sorted(unqualified)).encode("utf-8")).hexdigest()[:8]
+        return Snapshot(
+            snapshot.subject,
+            f"{snapshot.revision}:partial:{suffix}",
+            snapshot.facts,
+            snapshot.trace_refs,
+            tuple(updated_coverage),
+        )
 
     def can_apply(self, proposal):
         workflow = LOCAL_WORKFLOWS[proposal.capability_id]
@@ -86,22 +120,11 @@ class QualifiedSystem:
 
 
 def _private_directory(path: Path) -> Path:
-    path = path.expanduser().resolve(strict=True)
-    if path.is_relative_to(ROOT) or any((p / ".git").exists() for p in (path, *path.parents)):
-        raise PermissionError("use a private deployment directory outside Git")
-    identity = path.stat()
-    if not path.is_dir() or identity.st_uid != os.getuid() or stat.S_IMODE(identity.st_mode) & 0o077:
-        raise PermissionError("deployment directory must be private to its owner")
-    return path
+    return verify_private_directory(path, ROOT)
 
 
 def _private_file(path: Path) -> bytes:
-    if path.is_symlink() or not path.is_file():
-        raise PermissionError("deployment input must be a regular file")
-    identity = path.stat()
-    if identity.st_uid != os.getuid() or stat.S_IMODE(identity.st_mode) & 0o022:
-        raise PermissionError("deployment input must be owned and writable only by its owner")
-    return path.read_bytes()
+    return verify_private_file(path)
 
 
 def build_site_runtime(directory: Path) -> TaskRuntime:
@@ -161,7 +184,8 @@ def build_site_runtime(directory: Path) -> TaskRuntime:
     for method in ("authorize", "read_context", "can_apply", "apply_bound", "read_back", "find_submission"):
         if not callable(getattr(provider, method, None)):
             raise ValueError(f"deployment provider must implement {method}")
-    system = QualifiedSystem(provider, catalog)
+    read_mode = config.get("read_mode", "strict")
+    system = QualifiedSystem(provider, catalog, read_mode=read_mode)
     store = SqliteTaskStore(directory / "tasks.sqlite", site_id=site_id)
     engine = TaskEngine(
         SiteKnowledge(rules), system, None, policies, store,

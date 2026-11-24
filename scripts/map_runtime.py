@@ -72,6 +72,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     show = commands.add_parser("show", parents=[common], help="show one task view")
     show.add_argument("--task-id", required=True)
+    list_cmd = commands.add_parser("list", parents=[common], help="list persisted tasks")
+    list_cmd.add_argument("--status")
+    list_cmd.add_argument("--patient-id")
+    list_cmd.add_argument("--limit", type=int, default=50)
+    cancel = commands.add_parser("cancel", parents=[common], help="cancel an unaccepted task")
+    cancel.add_argument("--task-id", required=True)
+    cancel.add_argument("--reason", required=True)
+    cancel.add_argument("--clinician")
     refresh = commands.add_parser("refresh", parents=[common],
                                   help="re-read sources and prepare the same unsubmitted task")
     refresh.add_argument("--task-id", required=True)
@@ -141,6 +149,12 @@ def main() -> int:
             view = runtime.start(_request_from(args.request), auto_submit=args.auto_submit)
         elif args.command == "show":
             view = runtime.show(args.task_id)
+        elif args.command == "list":
+            view = {"tasks": runtime.list_tasks(
+                status=args.status, patient_id=args.patient_id, limit=args.limit,
+            )}
+        elif args.command == "cancel":
+            view = runtime.cancel(args.task_id, args.reason, clinician_id=args.clinician)
         elif args.command == "refresh":
             inputs = None
             if args.inputs:
