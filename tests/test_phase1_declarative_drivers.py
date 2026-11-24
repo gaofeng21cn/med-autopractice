@@ -412,8 +412,8 @@ class DeclarativeSiteAndDriversTests(unittest.TestCase):
         server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
-        self.addCleanup(server.shutdown)
         self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
 
         pikvm = PiKVMHttpTransport(f"http://127.0.0.1:{server.server_address[1]}")
         self.assertTrue(pikvm.status()["connected"])

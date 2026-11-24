@@ -10,6 +10,7 @@ from med_autopractice.adapters.synthetic import SYNTHETIC_SCOPES, SYNTHETIC_SITE
 from med_autopractice.agent.task_engine import JsonlAuditSink
 from med_autopractice.agent.task_store import InMemoryTaskStore, SyntheticSqliteTaskStore
 from med_autopractice.domain.task import ClinicianApproval, SubjectRef, TaskRequest
+from med_autopractice.platform.security import is_windows
 from med_autopractice.runtime import build_policies, build_synthetic_runtime
 from med_autopractice.workflows.catalog import PHASE1_WORKFLOWS
 
@@ -228,8 +229,10 @@ class RuntimeCliTests(unittest.TestCase):
         result = self.run_cli("start", "--store", str(self.store),
                               "--request", str(self.request_path))
         self.assertEqual(result.returncode, 2)
-        self.assertIn("error", json.loads(result.stderr))
-        self.assertEqual(self.store.stat().st_mode & 0o777, 0o600)
+        self.assertIn("rejects non-demo identities", json.loads(result.stderr)["error"])
+        self.assertTrue(self.store.is_file())
+        if not is_windows():
+            self.assertEqual(self.store.stat().st_mode & 0o777, 0o600)
 
 
 if __name__ == "__main__":

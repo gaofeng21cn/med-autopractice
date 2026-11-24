@@ -49,10 +49,17 @@ class KnowledgeSourcesTests(unittest.TestCase):
     def test_direct_skill_cli_uses_opl_bin_and_forwards_exact_review_flags(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            fake = root / "opl"
-            fake.write_text("#!" + sys.executable + "\nimport json,sys\n"
-                "print(json.dumps({'version':'g2','arguments':sys.argv[1:]}))\n")
-            fake.chmod(0o700)
+            wrapper = "import json,sys\nprint(json.dumps({'version':'g2','arguments':sys.argv[1:]}))\n"
+            if os.name == "nt":
+                fake = root / "opl.cmd"
+                (root / "opl.py").write_text(wrapper, encoding="utf-8")
+                fake.write_text(f'@echo off\n"{sys.executable}" "%~dp0opl.py" %*\n', encoding="utf-8")
+                expected_files = ["opl.cmd", "opl.py"]
+            else:
+                fake = root / "opl"
+                fake.write_text(f"#!{sys.executable}\n{wrapper}", encoding="utf-8")
+                fake.chmod(0o700)
+                expected_files = ["opl"]
             result = subprocess.run([sys.executable, str(ROOT / "scripts/map_knowledge.py"),
                 "--workspace", directory, "register", "--registry", str(root / "registry.json"),
                 "--item", str(root / "item.json"), "--expected-sha256", "sha256:synthetic",
@@ -63,7 +70,7 @@ class KnowledgeSourcesTests(unittest.TestCase):
             self.assertEqual(arguments[:3], ["knowledge", "register", "--workspace"])
             self.assertEqual(arguments[arguments.index("--domain") + 1], DOMAIN_ID)
             self.assertEqual(arguments[arguments.index("--review-ref") + 1], "synthetic://review")
-            self.assertEqual(sorted(path.name for path in root.iterdir()), ["opl"])
+            self.assertEqual(sorted(path.name for path in root.iterdir()), expected_files)
 
 
 if __name__ == "__main__":
