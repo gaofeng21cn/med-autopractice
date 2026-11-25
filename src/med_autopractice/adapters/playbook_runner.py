@@ -198,24 +198,45 @@ class PlaybookRunner:
                 f"hospital session locked or expired ({event.matched_keyword}); manual relogin required"
             )
 
+    def verify_subject(self, step: PlaybookStep, subject: SubjectRef) -> ScreenObservation:
+        reader = getattr(self.driver, "read_field", None)
+        if step.selector and callable(reader):
+            obs = reader(target=step.target, selector=step.selector, region_hint=step.region_hint)
+        else:
+            obs = self.driver.observe(step.region_hint)
+        self._check_session_observation(obs)
+        _verify_scoped_subject(obs, subject)
+        if self.session_guard is not None and self.session_guard.state == "paused_reauth_required":
+            self.session_guard.confirm_reauthenticated(obs, subject=subject)
+        return obs
+
     def run(
         self,
         playbook: Playbook,
         subject: SubjectRef,
         params: Mapping[str, Any] | None = None,
     ) -> PlaybookExecutionResult:
+        if playbook.site_id != subject.site_id:
+            raise UIStateError("playbook belongs to another site")
         param_map = dict(params or {})
         extracted: dict[str, Any] = {}
         extracted_scopes: dict[str, str] = {}
         traces: list[StepTrace] = []
         screenshots: list[str] = []
         subject_state: dict[str, SubjectRef | None] = {"observed": None}
+        binding_step: PlaybookStep | None = None
 
         for step in playbook.steps:
             self.driver.check_human_interrupt()
+            if step.is_write:
+                if binding_step is None:
+                    raise UIStateError("verify patient and encounter before a write step")
+                self.verify_subject(binding_step, subject)
             obs, step_shot = self._run_step_with_policy(
                 step, subject, param_map, extracted, extracted_scopes, subject_state,
             )
+            if step.primitive == "verify_subject":
+                binding_step = step
             if step_shot:
                 screenshots.append(step_shot)
             elif step.evidence == "screenshot_ref":
@@ -253,7 +274,7 @@ class PlaybookRunner:
     ) -> tuple[ScreenObservation, str | None]:
         from med_autopractice.adapters.session_guard import SessionLockedError
 
-        attempts = 2 if step.on_failure == "retry_once" else 1
+        attempts = 2 if step.on_failure == "retry_once" and not step.is_write else 1
         last_error: Exception | None = None
         for attempt in range(attempts):
             self.driver.check_human_interrupt()
@@ -341,14 +362,8 @@ class PlaybookRunner:
             return obs, None
 
         if op == "verify_subject":
-            reader = getattr(self.driver, "read_field", None)
-            if step.selector and callable(reader):
-                obs = reader(target=step.target, selector=step.selector, region_hint=step.region_hint)
-            else:
-                obs = self.driver.observe(step.region_hint)
-            self._check_session_observation(obs)
-            verified = _verify_scoped_subject(obs, subject)
-            subject_state["observed"] = verified
+            obs = self.verify_subject(step, subject)
+            subject_state["observed"] = subject
             return obs, None
 
         if op == "read_text":

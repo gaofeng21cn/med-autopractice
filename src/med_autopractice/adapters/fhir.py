@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 import json
 import re
 from urllib.parse import urlsplit
@@ -140,6 +140,26 @@ def _format_num(value: Any) -> str:
     return str(value)
 
 
+def _encode_decimal(value: Any) -> int | float:
+    if not isinstance(value, Decimal):
+        raise TypeError(f"cannot encode FHIR value of type {type(value).__name__}")
+    number = _numeric_or_none(value)
+    if number is None or Decimal(str(number)) != value:
+        raise ValueError("cannot round-trip a FHIR decimal without changing its value")
+    return number
+
+
+def _order_field_matches(field: str, observed: Any, expected: Any) -> bool:
+    actual = str(observed).strip()
+    target = str(expected).strip()
+    if field not in {"dose", "quantity"}:
+        return actual == target
+    try:
+        return Decimal(actual) == Decimal(target)
+    except InvalidOperation:
+        return False
+
+
 class FHIRClinicalSystem:
     """FHIR R4 ClinicalSystem implementation (read-only by default; explicit write capabilities opt-in)."""
 
@@ -182,12 +202,15 @@ class FHIRClinicalSystem:
         self.nursing_category = nursing_category
         self._opener = build_opener(_NoRedirect())
 
-    def _headers(self, *, write: bool = False, if_match: str | None = None) -> dict[str, str]:
+    def _headers(self, *, write: bool = False, if_match: str | None = None,
+                 if_none_exist: str | None = None) -> dict[str, str]:
         headers = {"Accept": "application/fhir+json"}
         if write:
             headers["Content-Type"] = "application/fhir+json; charset=utf-8"
         if if_match:
             headers["If-Match"] = if_match
+        if if_none_exist:
+            headers["If-None-Exist"] = if_none_exist
         if self.access_token:
             headers["Authorization"] = "Bearer " + self.access_token()
         return headers
@@ -210,13 +233,16 @@ class FHIRClinicalSystem:
 
     def _request_json(
         self, method: str, path_or_url: str, *, body: dict | None = None, if_match: str | None = None,
+        if_none_exist: str | None = None,
     ) -> dict:
         if "://" in path_or_url:
             url = self._validate_same_origin(path_or_url)
         else:
             url = f"{self.base_url}/{path_or_url.lstrip('/')}"
-        data = json.dumps(body, ensure_ascii=False).encode("utf-8") if body is not None else None
-        req = Request(url, data=data, headers=self._headers(write=body is not None, if_match=if_match), method=method)
+        data = (json.dumps(body, ensure_ascii=False, allow_nan=False, default=_encode_decimal).encode("utf-8")
+                if body is not None else None)
+        headers = self._headers(write=body is not None, if_match=if_match, if_none_exist=if_none_exist)
+        req = Request(url, data=data, headers=headers, method=method)
         with self._opener.open(req, timeout=self.timeout) as resp:
             return json.load(resp, parse_float=Decimal)
 
@@ -281,8 +307,7 @@ class FHIRClinicalSystem:
                 None,
             )
             if raw_next:
-                resolved = urljoin(next_url + ("/" if next_url.endswith("/") else ""), str(raw_next)) if "://" not in str(raw_next) else str(raw_next)
-                next_url = self._validate_same_origin(resolved)
+                next_url = self._validate_same_origin(urljoin(next_url, str(raw_next)))
             else:
                 next_url = None
 
@@ -371,6 +396,10 @@ class FHIRClinicalSystem:
             med_cc = med.get("medicationCodeableConcept") or {}
             med_code = next((c.get("code") for c in (med_cc.get("coding") or []) if c.get("code")), None) or med_cc.get("text") or ""
             med_text = med_cc.get("text") or med_code or mid
+            details = {"kind": "current_order" if med.get("status") == "active" else "medication_history",
+                       "code": str(med_code or med_text)}
+            if src_ref != obj_ref:
+                details["target_version_ref"] = src_ref
             facts.append(Fact(
                 fact_id=f"MedicationRequest/{mid}",
                 value=str(med_text),
@@ -379,7 +408,7 @@ class FHIRClinicalSystem:
                 source_object_ref=obj_ref,
                 recorded_at=med.get("authoredOn"),
                 status="observed" if med.get("status") in {"active", "completed"} else "uncertain",
-                details={"kind": "current_order", "code": str(med_code or med_text)},
+                details=details,
             ))
         traces.extend(med_traces)
         coverages.append(
@@ -463,7 +492,18 @@ class FHIRClinicalSystem:
         return Snapshot(subject, revision, tuple(facts), tuple(traces), tuple(coverages))
 
     def can_apply(self, proposal) -> bool:
-        return proposal.subject.site_id == self.site_id and proposal.capability_id in self.write_capabilities
+        if proposal.subject.site_id != self.site_id or proposal.capability_id not in self.write_capabilities:
+            return False
+        if self._resource_type_for(proposal.capability_id, proposal.payload) == "DocumentReference":
+            return True
+        changes = proposal.payload.get("changes")
+        return isinstance(changes, list) and bool(changes) and all(
+            isinstance(change, dict) and (
+                change.get("action") == "add"
+                or (self.order_write_status == "active" and change.get("action") in {"change", "stop"}
+                    and (change.get("target_version_ref") or "/_history/" in str(change.get("target_ref") or "")))
+            ) for change in changes
+        )
 
     @staticmethod
     def _resource_type_for(capability_id: str, payload: dict) -> str:
@@ -489,7 +529,6 @@ class FHIRClinicalSystem:
         enc_ref: str,
         item_key: str,
         batch_key: str,
-        existing_id: str | None = None,
     ) -> dict:
         action = change.get("action")
         code = str(change.get("code") or "").strip()
@@ -515,8 +554,6 @@ class FHIRClinicalSystem:
                 {"system": _BATCH_IDEMPOTENCY_SYSTEM, "value": batch_key},
             ],
         }
-        if existing_id:
-            resource["id"] = existing_id
         if change.get("reason"):
             resource["reasonCode"] = [{"text": str(change["reason"])}]
         fact_ids = [str(fid) for fid in (change.get("fact_ids") or ()) if str(fid).strip()]
@@ -539,9 +576,9 @@ class FHIRClinicalSystem:
                 dosage["timing"] = {"code": {"text": str(change["frequency"])}}
             if change.get("dose") is not None or change.get("unit") is not None:
                 dose_val = _numeric_or_none(change.get("dose"))
-                qty: dict = {}
-                if dose_val is not None:
-                    qty["value"] = dose_val
+                if dose_val is None:
+                    raise ValueError("FHIR dose must be numeric")
+                qty = {"value": dose_val}
                 if change.get("unit") is not None:
                     qty["unit"] = str(change["unit"])
                 if qty:
@@ -550,7 +587,9 @@ class FHIRClinicalSystem:
                 dosage.setdefault("additionalInstruction", []).append({"text": f"duration:{change['duration']}"})
             if change.get("quantity") is not None:
                 qty_val = _numeric_or_none(change.get("quantity"))
-                disp_qty = {"value": qty_val} if qty_val is not None else {"value": str(change["quantity"])}
+                if qty_val is None:
+                    raise ValueError("FHIR dispense quantity must be numeric")
+                disp_qty = {"value": qty_val}
                 if change.get("unit") is not None:
                     disp_qty["unit"] = str(change["unit"])
                 resource["dispenseRequest"] = {"quantity": disp_qty}
@@ -578,9 +617,8 @@ class FHIRClinicalSystem:
         rtype = self._resource_type_for(proposal.capability_id, proposal.payload)
 
         if rtype == "DocumentReference":
-            if_match: str | None = None
             target = "DocumentReference"
-            method = "POST"
+            conditions = {"if_none_exist": "identifier=" + quote(f"{_IDEMPOTENCY_SYSTEM}|{idempotency_key}", safe="")}
             resource: dict = {
                 "resourceType": "DocumentReference",
                 "status": "current",
@@ -600,15 +638,16 @@ class FHIRClinicalSystem:
                 rel_path, rid = self._resolve_resource_path(existing_object_ref, "DocumentReference")
                 existing = self._request_json("GET", rel_path)
                 encs = (existing.get("context") or {}).get("encounter") or []
-                if not self._bound(existing.get("subject"), pat_ref) or not any(self._bound(e, enc_ref) for e in encs):
-                    raise ValueError("existing DocumentReference belongs to another patient or encounter")
-                vid = (existing.get("meta") or {}).get("versionId")
-                if vid:
-                    if_match = f'W/"{vid}"'
-                resource["id"] = rid
+                if (existing.get("resourceType") != rtype or existing.get("id") != rid
+                        or not self._bound(existing.get("subject"), pat_ref)
+                        or not any(self._bound(e, enc_ref) for e in encs)
+                        or existing.get("status") != "current" or existing.get("docStatus") != "preliminary"):
+                    raise ValueError("existing DocumentReference must be the bound current draft")
+                vid = _resource_id((existing.get("meta") or {}).get("versionId"))
+                conditions = {"if_match": f'W/"{vid}"'}
+                resource = {**existing, **resource, "id": rid}
                 target = rel_path
-                method = "PUT"
-            saved = self._request_json(method, target, body=resource, if_match=if_match)
+            saved = self._request_json("PUT" if existing_object_ref else "POST", target, body=resource, **conditions)
             if saved.get("resourceType") != "DocumentReference" or not saved.get("id"):
                 raise ValueError("FHIR server returned unexpected DocumentReference payload on write")
             rid = _resource_id(str(saved["id"]))
@@ -620,53 +659,68 @@ class FHIRClinicalSystem:
         if not isinstance(changes, list) or not changes:
             raise ValueError("MedicationRequest write requires non-empty proposal.payload['changes']")
 
-        version_refs: list[str] = []
-        created_refs: list[str] = []
-        observed_states: list[str] = []
+        operations = []
+        updated_ids: set[str] = set()
         for idx, ch in enumerate(changes):
-            if not isinstance(ch, dict):
-                raise ValueError("each order change must be a JSON object")
             action = ch.get("action")
             item_key = f"{idempotency_key}:{idx}"
+            body = self._build_r4_medication_request(
+                ch, pat_ref=pat_ref, enc_ref=enc_ref, item_key=item_key, batch_key=idempotency_key,
+            )
             if action == "add":
-                body = self._build_r4_medication_request(
-                    ch, pat_ref=pat_ref, enc_ref=enc_ref, item_key=item_key, batch_key=idempotency_key,
-                )
-                saved = self._request_json("POST", "MedicationRequest", body=body)
-            else:
-                target_ref = str(ch.get("target_ref") or "").strip()
-                if not target_ref:
-                    raise ValueError(f"order {action} requires target_ref")
-                rel_path, existing_rid = self._resolve_resource_path(target_ref, "MedicationRequest")
-                existing = self._request_json("GET", rel_path)
-                if not self._bound(existing.get("subject"), pat_ref) or not self._bound(existing.get("encounter"), enc_ref):
-                    raise ValueError("target MedicationRequest belongs to another patient or encounter")
-                med_cc = existing.get("medicationCodeableConcept") or {}
-                existing_code = next((c.get("code") for c in (med_cc.get("coding") or []) if c.get("code")), None) or med_cc.get("text")
-                if existing_code and str(existing_code) != str(ch.get("code")):
-                    raise ValueError("target MedicationRequest medication code differs from proposal")
-                vid = (existing.get("meta") or {}).get("versionId")
-                if_match = f'W/"{vid}"' if vid else None
-                body = self._build_r4_medication_request(
-                    ch, pat_ref=pat_ref, enc_ref=enc_ref, item_key=item_key, batch_key=idempotency_key,
-                    existing_id=existing_rid,
-                )
-                saved = self._request_json("PUT", rel_path, body=body, if_match=if_match)
+                key_query = "identifier=" + quote(f"{_IDEMPOTENCY_SYSTEM}|{item_key}", safe="")
+                operations.append(("POST", "MedicationRequest", body, {"if_none_exist": key_query}))
+                continue
 
+            target_ref = str(ch.get("target_ref") or "").strip()
+            rel_path, existing_rid = self._resolve_resource_path(target_ref, "MedicationRequest")
+            version_ref = str(ch.get("target_version_ref") or target_ref)
+            version_target, marker, version = version_ref.rpartition("/_history/")
+            if (not marker or self._resolve_resource_path(version_target, "MedicationRequest")[0] != rel_path
+                    or existing_rid in updated_ids):
+                raise ValueError("each order update requires a unique target and its reviewed version")
+            vid = _resource_id(version)
+            existing = self._request_json("GET", rel_path)
+            if (existing.get("resourceType") != "MedicationRequest" or existing.get("id") != existing_rid
+                    or not self._bound(existing.get("subject"), pat_ref)
+                    or not self._bound(existing.get("encounter"), enc_ref)
+                    or existing.get("status") != "active"
+                    or (existing.get("meta") or {}).get("versionId") != vid):
+                raise ValueError("existing order no longer matches the reviewed target and version")
+            fields = self._extract_r4_medication_fields(existing)
+            if fields["code"] != ch.get("code"):
+                raise ValueError("target MedicationRequest medication code differs from proposal")
+            if action == "change" and len(existing.get("dosageInstruction") or ()) > 1:
+                raise ValueError("a single MAP change cannot represent multiple dosage instructions")
+            identifiers = [item for item in (existing.get("identifier") or ())
+                           if item.get("system") not in {_IDEMPOTENCY_SYSTEM, _BATCH_IDEMPOTENCY_SYSTEM}]
+            body["identifier"] = identifiers + body["identifier"]
+            body["medicationCodeableConcept"] = existing["medicationCodeableConcept"]
+            body["intent"] = existing.get("intent") or body["intent"]
+            operations.append(("PUT", rel_path, {**existing, **body}, {"if_match": f'W/"{vid}"'}))
+            updated_ids.add(existing_rid)
+
+        # Validate all request bodies before the first side effect.
+        for _, _, body, _ in operations:
+            json.dumps(body, allow_nan=False, default=_encode_decimal)
+        version_refs: list[str] = []
+        object_refs: list[str] = []
+        for method, target, body, conditions in operations:
+            saved = self._request_json(method, target, body=body, **conditions)
             if saved.get("resourceType") != "MedicationRequest" or not saved.get("id"):
                 raise ValueError("FHIR server returned unexpected MedicationRequest payload on write")
             rid = _resource_id(str(saved["id"]))
-            created_refs.append(f"{self.base_url}/MedicationRequest/{rid}")
+            if saved.get("status") != body["status"] or (method == "PUT" and body.get("id") != rid):
+                raise ValueError("FHIR server returned an unexpected saved order or state")
+            object_refs.append(f"{self.base_url}/MedicationRequest/{rid}")
             version_refs.append(self._version_ref(self.base_url, "MedicationRequest", rid, saved))
-            observed_states.append(self._map_fhir_order_status(saved.get("status")))
 
-        if len(created_refs) == 1:
-            batch_ref = created_refs[0]
-            receipt_state = observed_states[0]
+        if len(object_refs) == 1:
+            batch_ref = object_refs[0]
         else:
             token_param = quote(f"{_BATCH_IDEMPOTENCY_SYSTEM}|{idempotency_key}", safe="")
             batch_ref = f"{self.base_url}/MedicationRequest?identifier={token_param}"
-            receipt_state = "saved_draft" if self.order_write_status == "draft" else "entered"
+        receipt_state = "saved_draft" if self.order_write_status == "draft" else "entered"
         return ExecutionReceipt(batch_ref, receipt_state, tuple(version_refs))
 
     def _extract_document_payload(self, res: dict) -> tuple[dict | None, str]:
@@ -738,7 +792,9 @@ class FHIRClinicalSystem:
     ) -> tuple[dict | None, str, bool]:
         """Reconstruct and verify standard FHIR R4 MedicationRequest resources against proposal changes."""
         expected_changes = (task.proposal.payload or {}).get("changes")
-        if not isinstance(expected_changes, list) or not expected_changes or not resources:
+        if (not isinstance(expected_changes, list) or not expected_changes
+                or len(resources) != len(expected_changes)
+                or len({res.get("id") for res in resources}) != len(resources)):
             return None, "", False
 
         parsed_items: list[tuple[dict, dict[str, Any]]] = []
@@ -756,7 +812,6 @@ class FHIRClinicalSystem:
         expected_active_fhir = self.order_write_status
         used: set[int] = set()
         reconstructed_changes: list[dict[str, Any]] = []
-        observed_mapped_states: list[str] = []
 
         for idx, exp in enumerate(expected_changes):
             if not isinstance(exp, dict):
@@ -766,10 +821,10 @@ class FHIRClinicalSystem:
             exp_key = f"{task.idempotency_key}:{idx}" if task.idempotency_key else ""
             match_idx: int | None = None
 
-            for r_idx, (raw_res, fields) in enumerate(parsed_items):
+            for r_idx, (_, fields) in enumerate(parsed_items):
                 if r_idx in used:
                     continue
-                if exp_key and fields["item_key"] and fields["item_key"] != exp_key:
+                if exp_key and fields["item_key"] != exp_key:
                     continue
                 if fields["code"] != code:
                     continue
@@ -786,7 +841,7 @@ class FHIRClinicalSystem:
                     fields_match = True
                     for fname in ("dose", "unit", "route", "frequency", "instruction", "duration", "quantity"):
                         if fname in exp and exp[fname] is not None:
-                            if str(fields.get(fname, "")).strip() != str(exp[fname]).strip():
+                            if not _order_field_matches(fname, fields.get(fname, ""), exp[fname]):
                                 fields_match = False
                                 break
                     if not fields_match:
@@ -802,12 +857,8 @@ class FHIRClinicalSystem:
                 return {"resources": [item for _, item in parsed_items]}, self._map_fhir_order_status(parsed_items[0][1]["status"]), True
             used.add(match_idx)
             reconstructed_changes.append(dict(exp))
-            observed_mapped_states.append(self._map_fhir_order_status(parsed_items[match_idx][1]["status"]))
 
-        if len(observed_mapped_states) == 1:
-            batch_state = observed_mapped_states[0]
-        else:
-            batch_state = "saved_draft" if expected_active_fhir == "draft" else "entered"
+        batch_state = "saved_draft" if expected_active_fhir == "draft" else "entered"
         reconstructed = {"type": task.proposal.payload.get("type", "order_changes"), "changes": reconstructed_changes}
         return reconstructed, batch_state, True
 
@@ -830,7 +881,8 @@ class FHIRClinicalSystem:
             enc_ok = any(self._bound(e, enc_ref) for e in encs)
             visible_payload, mapped_state = self._extract_document_payload(res)
             digest = ""
-            if (actual_type == "DocumentReference" and subject_ok and enc_ok and visible_payload is not None
+            if (actual_type == "DocumentReference" and res.get("status") == "current"
+                    and subject_ok and enc_ok and visible_payload is not None
                     and json.dumps(visible_payload, ensure_ascii=False, sort_keys=True)
                     == json.dumps(task.proposal.payload, ensure_ascii=False, sort_keys=True)):
                 digest = task.proposal.digest
@@ -846,7 +898,7 @@ class FHIRClinicalSystem:
                 trace_refs=(version_ref,),
                 visible_payload=visible_payload,
                 observed_at=observed_at,
-                resource_version_ref=version_ref,
+                resource_version_ref=version_ref if "/_history/" in version_ref else None,
             )
 
         if "?" in receipt.object_ref:
@@ -874,11 +926,7 @@ class FHIRClinicalSystem:
             or datetime.now(timezone.utc).isoformat()
         )
         observed_subject = task.request.subject if subject_enc_ok else SubjectRef(self.site_id, "mismatch", "mismatch")
-        primary_ver = (
-            version_refs[0]
-            if len(version_refs) == 1
-            else (f"{receipt.object_ref}#versions={len(version_refs)}" if version_refs else None)
-        )
+        primary_ver = version_refs[0] if version_refs and all("/_history/" in ref for ref in version_refs) else None
         return SystemReadback(
             subject=observed_subject,
             object_ref=receipt.object_ref,
@@ -921,22 +969,18 @@ class FHIRClinicalSystem:
         entries, truncated, _ = self._fetch_bundle_pages(query_path)
         if truncated or not entries:
             return None
-        valid_entries = [
-            res for res in entries
-            if res.get("resourceType") == "MedicationRequest" and res.get("id")
-            and self._bound(res.get("subject"), pat_ref) and self._bound(res.get("encounter"), enc_ref)
-        ]
-        if len(valid_entries) != len(entries):
+        payload, state, subject_ok = self._reconstruct_r4_orders_readback(
+            entries, task, pat_ref=pat_ref, enc_ref=enc_ref,
+        )
+        if not subject_ok or payload != task.proposal.payload:
             return None
         version_refs = tuple(
             self._version_ref(self.base_url, "MedicationRequest", _resource_id(str(r["id"])), r)
-            for r in valid_entries
+            for r in entries
         )
-        if len(valid_entries) == 1:
-            rid = _resource_id(str(valid_entries[0]["id"]))
+        if len(entries) == 1:
+            rid = _resource_id(str(entries[0]["id"]))
             obj_ref = f"{self.base_url}/MedicationRequest/{rid}"
-            state = self._map_fhir_order_status(valid_entries[0].get("status"))
         else:
             obj_ref = f"{self.base_url}/{query_path}"
-            state = "saved_draft" if self.order_write_status == "draft" else "entered"
         return ExecutionReceipt(obj_ref, state, version_refs)

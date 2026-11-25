@@ -95,6 +95,18 @@ class Phase4OfflineSecurityAndOpsTests(unittest.TestCase):
             self.assertNotEqual(bad_force.returncode, 0)
             self.assertEqual(marker.read_text(encoding="utf-8"), "important-user-data")
 
+            # An unrelated archive with the requested output name is left intact.
+            unrelated_zip = bundle_dir.with_name(bundle_dir.name + ".zip")
+            unrelated_zip.write_bytes(b"unrelated archive contents")
+            before = (bundle_dir / "bundle-manifest.json").read_bytes()
+            refused_archive = subprocess.run([
+                sys.executable, str(ROOT / "scripts/build_offline_bundle.py"),
+                "--output", str(bundle_dir), "--force", "--archive", "zip",
+            ], capture_output=True, text=True)
+            self.assertNotEqual(refused_archive.returncode, 0)
+            self.assertEqual(unrelated_zip.read_bytes(), b"unrelated archive contents")
+            self.assertEqual((bundle_dir / "bundle-manifest.json").read_bytes(), before)
+
             # Allow --force replacement of an existing MAP bundle directory and verify it
             forced = subprocess.run([
                 sys.executable, str(ROOT / "scripts/build_offline_bundle.py"),
@@ -276,6 +288,12 @@ class Phase4OfflineSecurityAndOpsTests(unittest.TestCase):
 
             sandbox = SyntheticHISSandbox()
             driver = WindowsUIADriver(backend=sandbox, screenshot_dir=site / "evidence")
+            key_material = key_file.read_bytes()
+            key_file.write_bytes(b"short-test-key")
+            with self.assertRaisesRegex(ValueError, "at least 32 bytes"):
+                build_site_runtime(site, driver=driver)
+            self.assertFalse((site / "tasks.sqlite").exists())
+            key_file.write_bytes(key_material)
             runtime = build_site_runtime(site, driver=driver)
             subj = SubjectRef("demo-local", "synthetic-p01", "synthetic-e01")
 

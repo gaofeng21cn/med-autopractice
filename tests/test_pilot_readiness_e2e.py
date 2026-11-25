@@ -130,7 +130,7 @@ class PilotReadinessOfflineBundleTests(unittest.TestCase):
                               "effect": "draft_write", "on_failure": "stop", "state": "verified"}},
                             {{"id": "save", "intent": "保存草稿", "primitive": "click", "selector": "#save-draft",
                               "target": "保存草稿", "expect_text": "已保存", "effect": "draft_write",
-                              "on_failure": "stop", "evidence": "screenshot_ref", "state": "verified"}},
+                              "on_failure": "retry_once", "evidence": "screenshot_ref", "state": "verified"}},
                             {{"id": "ref", "intent": "读引用", "primitive": "read_text", "selector": "#object-ref",
                               "extract_key": "object_ref", "expect_text": "demo://", "effect": "read_only", "on_failure": "stop", "state": "verified"}},
                             {{"id": "st", "intent": "读状态", "primitive": "read_text", "selector": "#object-state",
@@ -146,6 +146,8 @@ class PilotReadinessOfflineBundleTests(unittest.TestCase):
                         "steps": [
                             {{"id": "verify", "intent": "回读身份", "primitive": "verify_subject", "selector": "#patient-header",
                               "expect_text": "患者", "effect": "read_only", "on_failure": "stop", "state": "verified"}},
+                            {{"id": "reopen", "intent": "打开指定草稿", "primitive": "click", "selector": "#open-saved-note",
+                              "text_param": "object_ref", "expect_text": "已保存", "effect": "read_only", "on_failure": "stop", "state": "verified"}},
                             {{"id": "ref", "intent": "读引用", "primitive": "read_text", "selector": "#object-ref",
                               "extract_key": "object_ref", "expect_text": "demo://", "effect": "read_only", "on_failure": "stop", "state": "verified"}},
                             {{"id": "st", "intent": "读状态", "primitive": "read_text", "selector": "#object-state",
@@ -276,8 +278,10 @@ class PilotReadinessOfflineBundleTests(unittest.TestCase):
                 except TimeoutError:
                     pass
                 assert rt.show(note_task["task_id"])["status"] == "execution_uncertain"
+                assert len(sb.saved_notes) == 1
 
                 sb.simulate_save_timeout = False
+                sb.editor_text = "另一段尚未保存的编辑内容"
                 reconciled = rt.reconcile(note_task["task_id"])
                 assert reconciled["status"] == "needs_clinician_acceptance", reconciled
                 assert reconciled["execution"]["readback"]["subject"]["encounter_id"] == "synthetic-e01"
@@ -363,12 +367,18 @@ class PilotReadinessOfflineBundleTests(unittest.TestCase):
                     raise AssertionError("expected SessionLockedError")
                 except SessionLockedError:
                     pass
+                assert not sb_ord.saved_notes
+                sb_ord.session_locked = False
+                unlocked = rt_ord.submit(t_lock["task_id"], ClinicianApproval(
+                    t_lock["task_id"], "doc-1", t_lock["proposal"]["digest"], t_lock["snapshot"]["revision"],
+                ))
+                assert unlocked["status"] == "needs_clinician_acceptance", unlocked
                 print("PILOT_E2E_OK")
             """), encoding="utf-8")
 
             env = os.environ.copy()
             env["PYTHONDONTWRITEBYTECODE"] = "1"
-            env["PYTHONPATH"] = f"{(bundle_dir / 'src').resolve()}{os.pathsep}{ROOT}"
+            env["PYTHONPATH"] = os.pathsep.join((str(bundle_dir / "src"), str(bundle_dir)))
             run_pilot = subprocess.run(
                 [sys.executable, str(runner_script)],
                 cwd=tmp_dir, env=env, capture_output=True, text=True, check=False,

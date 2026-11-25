@@ -209,9 +209,14 @@ class SyntheticHISSandbox:
             self.page_index = 0
         elif target == "下一页" or selector == "#next-page":
             self.page_index = min(1, self.page_index + 1)
+        elif selector == "#open-saved-note":
+            self.editor_text = self.saved_notes[value]["draft_text"]
+            self.last_object_ref = value
+            self.order_batch_ref = None
         elif target == "保存草稿" or selector == "#save-draft":
             ref = f"demo://his/note/{len(self.saved_notes) + 1}"
             self.last_object_ref = ref
+            self.order_batch_ref = None
             self.saved_notes[ref] = {
                 "object_ref": ref,
                 "patient_id": self.patient_id,

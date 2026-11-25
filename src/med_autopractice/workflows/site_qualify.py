@@ -14,9 +14,12 @@ import time
 from typing import Any
 
 from med_autopractice.adapters.drivers.text_entry import ChineseEntryUnqualifiedError
-from med_autopractice.adapters.playbook_runner import HumanInterruptError, PlaybookRunner, UIDriver
+from med_autopractice.adapters.playbook_runner import (
+    HumanInterruptError, PlaybookRunner, UIDriver, _verify_scoped_subject,
+)
+from med_autopractice.adapters.ui import UIStateError
 from med_autopractice.domain.task import SubjectRef
-from med_autopractice.workflows.site_playbook import Playbook
+from med_autopractice.workflows.site_playbook import Playbook, PlaybookStep
 
 SYNTHETIC_500_CHAR_CHINESE_SAMPLE = (
     "患者系中年男性，因反复咳嗽、咳痰伴发热三天入院。今日查房神清，精神尚可，体温三十七度四，"
@@ -73,23 +76,22 @@ class QualificationReport:
 def _check_identity_binding(
     driver: UIDriver,
     subject: SubjectRef,
+    binding_step: PlaybookStep | None,
     iterations: int = 3,
 ) -> QualificationCheckItem:
     try:
+        runner = PlaybookRunner(driver)
         wrong_subject = SubjectRef(subject.site_id, f"{subject.patient_id}-WRONG", f"{subject.encounter_id}-WRONG")
         for _ in range(iterations):
-            obs = driver.observe()
-            text = obs.full_text()
-            if subject.patient_id not in text or subject.encounter_id not in text:
-                return QualificationCheckItem(
-                    "identity_binding", False,
-                    "active screen missing expected patient or encounter token", {"iterations": iterations},
-                )
-            if wrong_subject.patient_id in text or wrong_subject.encounter_id in text:
-                return QualificationCheckItem(
-                    "identity_binding", False,
-                    "ambiguous mismatched patient/encounter token appeared on screen", {"iterations": iterations},
-                )
+            obs = runner.verify_subject(binding_step, subject) if binding_step else driver.observe()
+            _verify_scoped_subject(obs, subject)
+            try:
+                _verify_scoped_subject(obs, wrong_subject)
+            except UIStateError:
+                continue
+            return QualificationCheckItem(
+                "identity_binding", False, "binding accepted a mismatched patient or encounter", {},
+            )
         return QualificationCheckItem(
             "identity_binding", True,
             f"verified unique patient & encounter binding across {iterations} checks with wrong-subject negative pass",
@@ -150,12 +152,21 @@ def _check_chinese_long_text_and_readback(
     sample_text: str,
 ) -> tuple[QualificationCheckItem, QualificationCheckItem]:
     try:
+        saved_object_verified = False
         if write_playbook is not None and readback_playbook is not None:
             runner = PlaybookRunner(driver)
             w_res = runner.run(write_playbook, subject, params={"draft_text": sample_text})
-            r_res = runner.run(readback_playbook, subject)
+            object_ref = str(w_res.extracted.get("object_ref") or "").strip()
+            r_res = runner.run(readback_playbook, subject, params={"object_ref": object_ref})
             observed = str(r_res.extracted.get("draft_text") or "")
-            shots = w_res.screenshot_refs or r_res.screenshot_refs
+            shots = r_res.screenshot_refs
+            saved_object_verified = (
+                r_res.observed_subject == subject
+                and bool(object_ref)
+                and str(r_res.extracted.get("object_ref") or "").strip() == object_ref
+                and bool(w_res.extracted.get("state"))
+                and r_res.extracted.get("state") == w_res.extracted["state"]
+            )
         else:
             driver.input_text(
                 sample_text,
@@ -174,9 +185,9 @@ def _check_chinese_long_text_and_readback(
             shots = (shot,)
 
         ratio = SequenceMatcher(None, sample_text.strip(), observed.strip()).ratio()
-        exact = sample_text.strip() in observed.strip()
+        exact = sample_text.strip() == observed.strip()
         accuracy = 1.0 if exact else round(ratio, 4)
-        text_ok = exact or ratio >= 0.995
+        text_ok = exact
 
         entry_item = QualificationCheckItem(
             "chinese_long_text_entry", text_ok,
@@ -184,11 +195,12 @@ def _check_chinese_long_text_and_readback(
             {"chars": len(sample_text), "accuracy": accuracy},
         )
         shot_ok = bool(shots) and all(Path(p).is_file() and Path(p).stat().st_size > 0 for p in shots if not str(p).startswith("demo://"))
-        rb_ok = text_ok and shot_ok
+        rb_ok = text_ok and shot_ok and saved_object_verified
         readback_item = QualificationCheckItem(
             "readback_consistency", rb_ok,
             "independent readback and non-empty screenshot verified" if rb_ok else "readback or screenshot check failed",
-            {"accuracy": accuracy, "screenshots_count": len(shots), "screenshot_non_empty": shot_ok},
+            {"accuracy": accuracy, "screenshots_count": len(shots), "screenshot_non_empty": shot_ok,
+             "saved_object_verified": saved_object_verified},
         )
         return entry_item, readback_item
     except ChineseEntryUnqualifiedError as error:
@@ -328,18 +340,33 @@ def run_qualification_suite(
     """Execute the 5-item UI/KVM qualification stress suite without leaking any PHI."""
     deps_doc = json.loads((site_dir / "dependencies.json").read_text(encoding="utf-8"))
     site_id = str(deps_doc.get("profile_id") or subject.site_id)
+    if site_id != subject.site_id:
+        raise ValueError("subject and qualification profile must belong to the same site")
+    if any(book and book.site_id != site_id for book in (collect_playbook, write_playbook, readback_playbook)):
+        raise ValueError("qualification playbooks must belong to the selected site")
+    if any(book and book.contains_write for book in (collect_playbook, readback_playbook)):
+        raise ValueError("qualification collection and readback must be read-only")
 
-    c1 = _check_identity_binding(driver, subject)
-    c2 = _check_multipage_collection(driver, subject, collect_playbook)
-    c3, c4 = _check_chinese_long_text_and_readback(
-        driver, subject,
-        write_playbook=write_playbook,
-        readback_playbook=readback_playbook,
-        editor_target=editor_target,
-        editor_selector=editor_selector,
-        editor_region_hint=editor_region_hint,
-        sample_text=sample_text,
-    )
+    bind_book = write_playbook or collect_playbook
+    binding_step = next((step for step in bind_book.steps if step.primitive == "verify_subject"), None) if bind_book else None
+    c1 = _check_identity_binding(driver, subject, binding_step)
+    c2 = (_check_multipage_collection(driver, subject, collect_playbook) if c1.passed else
+          QualificationCheckItem("multipage_collection", False, "skipped after identity check failed", {}))
+    if c1.passed and c2.passed:
+        c3, c4 = _check_chinese_long_text_and_readback(
+            driver, subject,
+            write_playbook=write_playbook,
+            readback_playbook=readback_playbook,
+            editor_target=editor_target,
+            editor_selector=editor_selector,
+            editor_region_hint=editor_region_hint,
+            sample_text=sample_text,
+        )
+    else:
+        c3, c4 = (
+            QualificationCheckItem(name, False, "skipped after read checks failed", {})
+            for name in ("chinese_long_text_entry", "readback_consistency")
+        )
     c5 = _check_human_interrupt(
         driver, interrupt_injector,
         interactive_handoff=interactive_handoff,

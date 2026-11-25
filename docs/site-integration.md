@@ -127,6 +127,8 @@ MAP 的本地入口 `scripts/map_runtime.py --site` 可装配院方的授权、�
 4. 建立 `deployment.json`，写入 `schema_version: map-local-deployment.v1`、`site_id`、`capabilities` 与 `rules`（只读工作流用 `null`，病历用 `saved_draft`，依赖规则的能力绑定含 `approved_ref` 的规则对象）。
 5. 在受控宿主登记部署目录和本院授权方式：先验证只读操作，再验证病程草稿保存与回读，最后开放确切医嘱批准与写入。
 
+声明式站点的采集、回读和对账使用只读 Playbook。写入 Playbook 在第一次写操作前核对当前患者与就诊，之后每个写步骤都重新核对。同一站点终端一次推进一个任务。保存响应不确定时，用原任务在系统内查找已保存对象并重新打开核对。私有站点的 MCP 服务由本机宿主通过 `stdio` 启动，环回 HTTP 入口用于合成演练。[现场适配模板](site-patterns/README.md)
+
 | 适配接口 | 部署方需要实现的行为 |
 | --- | --- |
 | `authorize(action, request, decision)` | 核对会话、任务用途、患者、就诊与授权；提交和验收核验医生批准记录并与任务 ID、内容摘要和资料版本一致。 |

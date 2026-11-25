@@ -105,6 +105,8 @@ def make_orders(inputs: dict, facts: tuple[Fact, ...], rule: Mapping, *, group: 
             "reason": text(row.get("reason"), "clinical rationale"), "fact_ids": fact_ids,
             "catalog_ref": catalog[code].source_ref,
         }
+        if ref is not None and current[ref].details.get("target_version_ref"):
+            entry["target_version_ref"] = text(current[ref].details["target_version_ref"], "target version reference")
         if action != "stop":
             fields = ("dose", "unit", "route", "frequency")
             if catalog[code].details.get("item_type") not in {"medication", "service"}:

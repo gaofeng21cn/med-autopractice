@@ -22,6 +22,7 @@ from med_autopractice.workflows.site_sync import inspect_and_sync_site_pack
 ROOT = Path(__file__).resolve().parents[2]
 REVIEW_UI_URI = "ui://med-autopractice/review-card"
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+_MCP_VERSIONS = ("2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25")
 
 
 def _read_server_version() -> str:
@@ -334,8 +335,9 @@ class MAPMCPServer:
 
         try:
             if method == "initialize":
+                requested_version = params.get("protocolVersion", _MCP_VERSIONS[0])
                 result: Any = {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": requested_version if requested_version in _MCP_VERSIONS else _MCP_VERSIONS[-1],
                     "capabilities": {
                         "tools": {},
                         "resources": {},
@@ -389,6 +391,8 @@ class MAPMCPServer:
                 out_stream.flush()
 
     def start_http(self, *, host: str = "127.0.0.1", port: int = 0) -> str:
+        if self.site_dir is not None:
+            raise ValueError("private site mode requires the local stdio transport")
         if host not in _LOOPBACK_HOSTS:
             raise ValueError("MCP HTTP transport must bind strictly to loopback (127.0.0.1 / localhost / ::1)")
         if self._http_server is not None:
@@ -399,7 +403,16 @@ class MAPMCPServer:
             def log_message(self, format, *args):
                 return
 
+            def do_GET(self):
+                self.send_error(HTTPStatus.METHOD_NOT_ALLOWED)
+
             def do_POST(self):
+                request_host = self.headers.get("Host", "")
+                server_port = self.server.server_port
+                local_addresses = {f"{address}:{server_port}" for address in ("127.0.0.1", "localhost", "[::1]")}
+                if request_host not in local_addresses or self.headers.get("Origin") not in (None, f"http://{request_host}"):
+                    self.send_error(HTTPStatus.FORBIDDEN)
+                    return
                 if self.path not in {"/", "/mcp"}:
                     self.send_error(HTTPStatus.NOT_FOUND)
                     return

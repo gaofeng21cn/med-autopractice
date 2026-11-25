@@ -16,11 +16,15 @@ if str(SRC) not in sys.path:
 
 from med_autopractice.deployment import _build_driver  # noqa: E402
 from med_autopractice.domain.task import SubjectRef  # noqa: E402
+from med_autopractice.medicine.proposals import NOTES  # noqa: E402
+from med_autopractice.platform.security import verify_private_directory, verify_private_file  # noqa: E402
+from med_autopractice.storage.evidence_store import ManagedEvidenceDriver, build_evidence_cipher  # noqa: E402
+from med_autopractice.workflows.catalog import LOCAL_WORKFLOWS  # noqa: E402
 from med_autopractice.workflows.site_playbook import SitePlaybook  # noqa: E402
 from med_autopractice.workflows.site_qualify import run_qualification_suite  # noqa: E402
 
 
-def _build_sandbox_driver_and_injector(site_dir: Path, evidence_dir: Path, config: dict):
+def _build_sandbox_driver_and_injector(evidence_dir: Path, config: dict):
     from examples.sandbox_his.sandbox_engine import SyntheticHISSandbox
     from med_autopractice.adapters.drivers.browser_cdp import BrowserCDPDriver
     from med_autopractice.adapters.drivers.desktop_win import WindowsUIADriver
@@ -61,48 +65,71 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--sandbox", action="store_true", help="Use local SyntheticHISSandbox instead of real device")
     args = parser.parse_args(argv)
 
-    site_dir = args.site.expanduser().resolve()
-    if site_dir.is_relative_to(ROOT):
-        parser.error("--site must live outside the repository")
-    config = json.loads((site_dir / "deployment.json").read_text(encoding="utf-8"))
-    site_id = str(config["site_id"])
-    driver_cfg = config.get("driver") or {}
-    evidence_dir = site_dir / "evidence"
-    evidence_dir.mkdir(exist_ok=True, mode=0o700)
+    if args.capability_id not in NOTES:
+        parser.error("this long-text qualification suite supports note draft workflows")
+    if args.handoff_mode == "synthetic" and not args.sandbox:
+        parser.error("synthetic handoff-mode requires --sandbox")
+    if args.promote and (args.sandbox or args.handoff_mode != "interactive"):
+        parser.error("site promotion requires a real driver and interactive handoff verification")
+    workflow = LOCAL_WORKFLOWS[args.capability_id]
+    allowed_dependencies = (workflow.write_dependency, workflow.readback_dependency)
+    dep_ids = tuple(args.dependency or allowed_dependencies)
+    if not set(dep_ids) <= set(allowed_dependencies):
+        parser.error("dependencies must match the selected note draft workflow")
 
-    interrupt_injector = None
-    if args.sandbox:
-        driver, sb_injector = _build_sandbox_driver_and_injector(site_dir, evidence_dir, config)
-        if args.handoff_mode != "none":
-            interrupt_injector = sb_injector
-    else:
-        driver = _build_driver(driver_cfg, evidence_dir)
-        if args.handoff_mode == "synthetic":
-            print(json.dumps({"passed": False, "error": "synthetic handoff-mode requires --sandbox"}, ensure_ascii=False))
-            return 1
-
-    bindings = (config.get("playbooks") or {}).get(args.capability_id) or {}
-    books = {b.playbook_id: b for b in SitePlaybook.load_directory(site_dir / "playbooks")} if (site_dir / "playbooks").is_dir() else {}
-    collect_ids = bindings.get("collect") or ()
-    collect_id = collect_ids[0] if isinstance(collect_ids, list) and collect_ids else collect_ids if isinstance(collect_ids, str) else None
-
-    dep_ids = tuple(args.dependency) if args.dependency else ("save_inpatient_note_draft", "readback_inpatient_note")
     try:
+        site_dir = verify_private_directory(args.site, ROOT)
+        config = json.loads(verify_private_file(site_dir / "deployment.json"))
+        site_id = str(config["site_id"])
+        bindings = (config.get("playbooks") or {}).get(args.capability_id) or {}
+        books = {book.playbook_id: book for book in SitePlaybook.load_directory(site_dir / "playbooks")}
+        collect_ids = bindings.get("collect") or ()
+        collect_id = collect_ids if isinstance(collect_ids, str) else next(iter(collect_ids), None)
+        collect_book = books.get(collect_id)
+        write_book = books.get(bindings.get("write"))
+        readback_book = books.get(bindings.get("readback"))
+        if not all((collect_book, write_book, readback_book)):
+            raise ValueError("qualification requires configured collect, draft write, and readback playbooks")
+        defaults = "qualification_synthetic_report.json" if args.sandbox else "qualification_report.json"
+        report_path = (args.report or site_dir / defaults).expanduser()
+        if report_path.is_symlink():
+            raise ValueError("qualification report must be a regular file")
+        report_path = report_path.resolve()
+        verify_private_directory(next(parent for parent in report_path.parents if parent.exists()), ROOT)
+        if report_path.exists():
+            previous = json.loads(verify_private_file(report_path))
+            if not isinstance(previous, dict) or previous.get("schema_version") != "map-qualification-report.v1":
+                raise ValueError("qualification report path contains a different file")
+
+        evidence_dir = site_dir / "evidence"
+        if args.sandbox:
+            evidence_dir = evidence_dir / "synthetic-qualification"
+        evidence_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if args.sandbox:
+            driver, sandbox_injector = _build_sandbox_driver_and_injector(evidence_dir, config)
+            interrupt_injector = sandbox_injector if args.handoff_mode != "none" else None
+        else:
+            cipher = build_evidence_cipher(config.get("evidence_security"), site_dir, repo_root=ROOT)
+            driver = _build_driver(config.get("driver") or {}, evidence_dir)
+            if cipher is not None:
+                driver = ManagedEvidenceDriver(driver, evidence_dir, cipher=cipher, site_id=site_id)
+            interrupt_injector = None
+
         report = run_qualification_suite(
             site_dir,
             driver=driver,
             subject=SubjectRef(site_id, args.patient_id, args.encounter_id),
-            collect_playbook=books.get(collect_id) if collect_id else None,
-            write_playbook=books.get(bindings.get("write")) if bindings.get("write") else None,
-            readback_playbook=books.get(bindings.get("readback")) if bindings.get("readback") else None,
+            collect_playbook=collect_book,
+            write_playbook=write_book,
+            readback_playbook=readback_book,
             interrupt_injector=interrupt_injector,
             interactive_handoff=(args.handoff_mode == "interactive" and interrupt_injector is None),
             handoff_timeout_sec=args.handoff_timeout,
             promote=args.promote,
             dependency_ids=dep_ids,
-            report_path=args.report or (site_dir / "qualification_report.json"),
+            report_path=report_path,
         )
-    except ValueError as error:
+    except (KeyError, OSError, TypeError, ValueError) as error:
         print(json.dumps({"passed": False, "error": str(error)}, ensure_ascii=False))
         return 1
 

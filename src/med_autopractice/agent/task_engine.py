@@ -104,6 +104,7 @@ class TaskEngine:
             raise ValueError("cancellation reason is required")
         if task.status in {"execution_uncertain", "accepted", "cancelled"}:
             raise ValueError(f"cannot cancel task in {task.status} state")
+        decision = None
         if clinician_id is not None:
             decision = ClinicianApproval(
                 task_id,
@@ -111,7 +112,7 @@ class TaskEngine:
                 task.prepared_digest or "cancelled",
                 task.snapshot.revision if task.snapshot else "none",
             )
-            self._require_access("cancel", task.effective_request, decision)
+        self._require_access("cancel", task.effective_request, decision)
         previous_status = task.status
         previous_feedback = task.review_feedback
         cleaned_reason = reason.strip()

@@ -126,9 +126,10 @@ def _task_from_json(body: str) -> Task:
 
 
 class SqliteTaskStore:
-    def __init__(self, path: Path, *, site_id: str | None = None):
+    def __init__(self, path: Path, *, site_id: str | None = None, serialize_operations: bool = False):
         self.site_id = site_id
         self.path = path
+        self.serialize_operations = serialize_operations
         open_private_rw(path)
         connection = sqlite3.connect(path)
         try:
@@ -159,9 +160,9 @@ class SqliteTaskStore:
         if not self.site_id:
             yield
             return
-        # Keep the whole target operation single-writer. SQLite CAS still protects each commit.
+        # Declarative tasks share a terminal. SQLite CAS still protects each task commit.
         lock_dir = self.path.parent / ".operations"
-        name = sha256(task_id.encode()).hexdigest()
+        name = "site-terminal" if self.serialize_operations else sha256(task_id.encode()).hexdigest()
         with exclusive_file_lock(lock_dir / name):
             yield
 

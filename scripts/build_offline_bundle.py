@@ -15,7 +15,10 @@ import tempfile
 from uuid import uuid4
 import zipfile
 
+from package_metadata import verify_package
+
 ROOT = Path(__file__).resolve().parents[1]
+_BUNDLE_SCHEMA = "map-offline-bundle.v1"
 
 
 def _sha256_file(path: Path) -> str:
@@ -27,10 +30,59 @@ def _sha256_file(path: Path) -> str:
 
 
 def _ensure_outside_repo(path: Path, repo_root: Path = ROOT) -> Path:
-    resolved = path.expanduser().resolve()
+    expanded = path.expanduser()
+    if expanded.is_symlink():
+        raise ValueError("offline bundle destination must be a real directory")
+    resolved = expanded.resolve()
     if resolved.is_relative_to(repo_root.resolve()):
         raise ValueError(f"offline bundle destination must live outside the repository: {resolved}")
     return resolved
+
+
+def _check_replacement(dest: Path, overwrite: bool) -> None:
+    if dest.is_symlink():
+        raise ValueError("offline bundle destination must be a real directory")
+    if not dest.exists():
+        return
+    if not overwrite:
+        raise ValueError(f"offline bundle destination already exists: {dest}; use --force to replace a MAP bundle")
+    try:
+        manifest = json.loads((dest / "bundle-manifest.json").read_text(encoding="utf-8"))
+        package = json.loads((dest / "opl-package.json").read_text(encoding="utf-8"))
+        lock = package["content_lock"]
+        if (manifest["schema_version"] != _BUNDLE_SCHEMA or manifest["package_id"] != "med-autopractice"
+                or package["package_id"] != manifest["package_id"] or manifest["version"] != package["version"]
+                or manifest["content_lock_digest"] != lock["digest"]):
+            raise ValueError("bundle and package identity differ")
+        managed = {"bundle-manifest.json", "opl-package.json", *lock["paths"]}
+        managed.update(entry["path"] for entry in manifest["wheelhouse"])
+    except (OSError, KeyError, TypeError, ValueError) as error:
+        raise ValueError(f"refusing --force overwrite of an unrecognized bundle: {dest}") from error
+    for path in dest.rglob("*"):
+        python_cache = path.parent.name == "__pycache__" and path.suffix == ".pyc"
+        if path.is_symlink() or (path.is_file() and not python_cache and path.relative_to(dest).as_posix() not in managed):
+            raise ValueError(f"refusing --force overwrite of a bundle with unmanaged content: {path}")
+
+
+def _check_archive_replacement(archive_path: Path, dest: Path, overwrite: bool) -> None:
+    if not archive_path.exists() and not archive_path.is_symlink():
+        return
+    if archive_path.is_symlink() or not overwrite or not (dest / "bundle-manifest.json").is_file():
+        raise ValueError(f"offline bundle archive destination already exists: {archive_path}")
+    entry = f"{dest.name}/bundle-manifest.json"
+    try:
+        if archive_path.suffix == ".zip":
+            with zipfile.ZipFile(archive_path) as archive:
+                manifest = archive.read(entry)
+        else:
+            with tarfile.open(archive_path, "r:gz") as archive:
+                with archive.extractfile(entry) as member:
+                    manifest = member.read()
+        if manifest == (dest / "bundle-manifest.json").read_bytes():
+            return
+    except (OSError, KeyError, TypeError, ValueError, AttributeError, tarfile.TarError, zipfile.BadZipFile):
+        pass
+    raise ValueError(f"refusing to overwrite an unrelated archive: {archive_path}")
 
 
 def build_offline_bundle(
@@ -43,15 +95,12 @@ def build_offline_bundle(
 ) -> dict:
     """Copy content-locked files to an isolated offline bundle directory with SHA256 manifest."""
     dest = _ensure_outside_repo(output_dir, repo_root=repo_root)
-    if dest.exists() or dest.is_symlink():
-        if not overwrite:
-            raise ValueError(
-                f"offline bundle destination already exists: {dest}; pass --force to replace an existing MAP bundle"
-            )
-        if dest.is_symlink() or not dest.is_dir() or not (dest / "bundle-manifest.json").is_file():
-            raise ValueError(
-                f"refusing --force overwrite: destination is not an existing MAP bundle directory ({dest})"
-            )
+    if archive not in {None, "zip", "tar.gz"}:
+        raise ValueError(f"unsupported archive format: {archive!r}")
+    archive_path = dest.with_name(f"{dest.name}.{archive}") if archive is not None else None
+    _check_replacement(dest, overwrite)
+    if archive_path is not None:
+        _check_archive_replacement(archive_path, dest, overwrite)
 
     package = json.loads((repo_root / "opl-package.json").read_text(encoding="utf-8"))
     lock_paths = list(package["content_lock"]["paths"])
@@ -61,7 +110,7 @@ def build_offline_bundle(
     stage_dir = Path(tempfile.mkdtemp(prefix=f".{dest.name}.stage-", dir=str(dest.parent)))
     os.chmod(stage_dir, 0o755)
     backup_dir: Path | None = None
-    archive_path: Path | None = None
+    tmp_archive: Path | None = None
 
     try:
         file_entries: list[dict] = []
@@ -96,11 +145,11 @@ def build_offline_bundle(
                     })
 
         manifest = {
-            "schema_version": "map-offline-bundle.v1",
+            "schema_version": _BUNDLE_SCHEMA,
             "package_id": package["package_id"],
             "version": package["version"],
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "min_python": "3.12",
+            "min_python": "3.10",
             "content_lock_digest": package["content_lock"]["digest"],
             "files_count": len(file_entries),
             "files": file_entries,
@@ -114,52 +163,48 @@ def build_offline_bundle(
         if not check["valid"]:
             raise ValueError(f"staged offline bundle failed self-verification: {check['mismatches']}")
 
+        if archive_path is not None:
+            tmp_archive = stage_dir.with_name(stage_dir.name + ".archive")
+            if archive == "tar.gz":
+                with tarfile.open(tmp_archive, "w:gz") as tf:
+                    tf.add(stage_dir, arcname=dest.name)
+            else:
+                with zipfile.ZipFile(tmp_archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                    for item in sorted(stage_dir.rglob("*")):
+                        if item.is_file():
+                            zf.write(item, arcname=f"{dest.name}/{item.relative_to(stage_dir).as_posix()}")
+
+        _check_replacement(dest, overwrite)
+        if archive_path is not None:
+            _check_archive_replacement(archive_path, dest, overwrite)
         if dest.exists():
             backup_dir = dest.parent / f".{dest.name}.backup-{uuid4().hex[:8]}"
             os.replace(dest, backup_dir)
+        installed = False
         try:
             os.replace(stage_dir, dest)
+            installed = True
+            if tmp_archive is not None:
+                os.replace(tmp_archive, archive_path)
         except Exception:
+            if installed:
+                os.replace(dest, stage_dir)
             if backup_dir is not None and backup_dir.exists() and not dest.exists():
                 os.replace(backup_dir, dest)
             raise
         if backup_dir is not None and backup_dir.exists():
             shutil.rmtree(backup_dir)
 
-        manifest_path = dest / "bundle-manifest.json"
-        if archive == "tar.gz":
-            archive_path = Path(f"{dest}.tar.gz")
-            tmp_archive = dest.parent / f".{archive_path.name}.{uuid4().hex[:8]}.tmp"
-            try:
-                with tarfile.open(tmp_archive, "w:gz") as tf:
-                    tf.add(dest, arcname=dest.name)
-                os.replace(tmp_archive, archive_path)
-            except Exception:
-                tmp_archive.unlink(missing_ok=True)
-                raise
-        elif archive == "zip":
-            archive_path = Path(f"{dest}.zip")
-            tmp_archive = dest.parent / f".{archive_path.name}.{uuid4().hex[:8]}.tmp"
-            try:
-                with zipfile.ZipFile(tmp_archive, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-                    for item in sorted(dest.rglob("*")):
-                        if item.is_file():
-                            zf.write(item, arcname=f"{dest.name}/{item.relative_to(dest)}")
-                os.replace(tmp_archive, archive_path)
-            except Exception:
-                tmp_archive.unlink(missing_ok=True)
-                raise
-        elif archive is not None:
-            raise ValueError(f"unsupported archive format: {archive!r}")
-
         return {
             "bundle_dir": str(dest),
-            "manifest": str(manifest_path),
+            "manifest": str(dest / "bundle-manifest.json"),
             "files_count": len(file_entries),
             "wheelhouse_count": len(wheel_entries),
             "archive": str(archive_path) if archive_path else None,
         }
     finally:
+        if tmp_archive is not None:
+            tmp_archive.unlink(missing_ok=True)
         if stage_dir.exists():
             shutil.rmtree(stage_dir, ignore_errors=True)
 
@@ -171,15 +216,26 @@ def verify_offline_bundle(bundle_dir: Path) -> dict:
     if not manifest_path.is_file():
         raise ValueError(f"bundle-manifest.json missing in {root}")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    if manifest.get("schema_version") != "map-offline-bundle.v1":
+    if manifest.get("schema_version") != _BUNDLE_SCHEMA:
         raise ValueError("unsupported offline bundle manifest schema")
 
     mismatches: list[str] = []
-    entries = [*manifest.get("files", []), *manifest.get("wheelhouse", [])]
+    files = manifest["files"]
+    entries = [*files, *manifest["wheelhouse"]]
+    try:
+        verify_package(root)
+        package = json.loads((root / "opl-package.json").read_text(encoding="utf-8"))
+        lock = package["content_lock"]
+        if (len(files) != manifest["files_count"] or [item["path"] for item in files] != ["opl-package.json", *lock["paths"]]
+                or manifest["content_lock_digest"] != lock["digest"]
+                or manifest["package_id"] != package["package_id"] or manifest["version"] != package["version"]):
+            mismatches.append("package_manifest_mismatch")
+    except (OSError, KeyError, TypeError, ValueError):
+        mismatches.append("package_content_lock_mismatch")
     for entry in entries:
         rel = entry["path"]
-        target = (root / rel).resolve()
-        if not target.is_relative_to(root) or not target.is_file():
+        target = root / rel
+        if target.is_symlink() or not target.resolve().is_relative_to(root) or not target.is_file():
             mismatches.append(f"missing:{rel}")
             continue
         actual = _sha256_file(target)
@@ -215,7 +271,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 0
-    except ValueError as error:
+    except (KeyError, OSError, TypeError, ValueError) as error:
         print(json.dumps({"valid": False, "error": str(error)}, ensure_ascii=False), file=sys.stderr)
         return 1
 

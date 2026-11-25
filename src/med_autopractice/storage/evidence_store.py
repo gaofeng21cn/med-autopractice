@@ -38,11 +38,10 @@ def build_evidence_cipher(
     if key_file:
         key_path = Path(str(key_file)).expanduser()
         if not key_path.is_absolute():
-            key_path = (site_dir / key_path).resolve()
-        return EvidenceCipher(
-            FileKeyProvider(key_path, repo_root=repo_root),
-            prefer_aesgcm=prefer_aesgcm,
-        )
+            key_path = site_dir / key_path
+        provider = FileKeyProvider(key_path, repo_root=repo_root)
+        provider.get_key()
+        return EvidenceCipher(provider, prefer_aesgcm=prefer_aesgcm)
 
     key_env = enc_cfg.get("key_env")
     if key_env:
@@ -118,7 +117,7 @@ class ManagedEvidenceDriver:
         raw_path = Path(raw_ref)
         if not raw_path.is_file():
             raise ValueError(f"driver screenshot did not produce a local file to encrypt: {raw_ref}")
-        enc_path = raw_path.with_name(raw_path.name + ".enc")
+        enc_path = self.evidence_dir / (raw_path.name + ".enc")
         try:
             self.cipher.encrypt_file(raw_path, enc_path, aad=self.site_id.encode("utf-8"))
         finally:

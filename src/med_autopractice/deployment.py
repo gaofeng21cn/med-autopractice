@@ -338,7 +338,7 @@ def build_site_runtime(
         provider = _DeclarativeSiteProvider(UIClinicalSystem(ui), config, session_guard=session_guard)
 
     system = QualifiedSystem(provider, catalog, read_mode=read_mode)
-    store = SqliteTaskStore(directory / "tasks.sqlite", site_id=site_id)
+    store = SqliteTaskStore(directory / "tasks.sqlite", site_id=site_id, serialize_operations=not has_provider)
     engine = TaskEngine(
         SiteKnowledge(rules), system, None, policies, store,
         authorize=provider.authorize, apply_bound=system.apply_bound,

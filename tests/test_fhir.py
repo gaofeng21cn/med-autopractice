@@ -265,17 +265,19 @@ class FHIRClinicalSystemTests(unittest.TestCase):
         req = TaskRequest("r-ord", "revise_orders", "调整医嘱", subject, "demo://grant")
         changes = [
             {
-                "action": "add", "code": "NEW-MED", "dose": "250", "unit": "mg",
+                "action": "add", "code": "NEW-MED", "dose": "250.0", "unit": "mg",
                 "route": "iv", "frequency": "q12h", "reason": "CRP升高",
                 "fact_ids": ["Observation/obs-2"], "catalog_ref": "demo://cat/NEW-MED",
             },
             {
                 "action": "change", "code": "DEMO-MED", "target_ref": f"{base_url}/MedicationRequest/ord-1",
+                "target_version_ref": f"{base_url}/MedicationRequest/ord-1/_history/3",
                 "dose": "750", "unit": "mg", "route": "po", "frequency": "bid", "reason": "加量",
                 "fact_ids": ["Observation/obs-1"], "catalog_ref": "demo://cat/DEMO-MED",
             },
             {
                 "action": "stop", "code": "STOP-MED", "target_ref": f"{base_url}/MedicationRequest/ord-2",
+                "target_version_ref": f"{base_url}/MedicationRequest/ord-2/_history/4",
                 "reason": "停用", "fact_ids": ["Observation/obs-1"], "catalog_ref": "demo://cat/STOP-MED",
             },
         ]
@@ -296,12 +298,18 @@ class FHIRClinicalSystemTests(unittest.TestCase):
         )
         self.assertEqual(draft_rb.state, "saved_draft")
         self.assertEqual(draft_rb.proposal_digest, single_add_prop.digest)
+        self.assertFalse(fhir_draft.can_apply(prop))
 
         # Active multi-item batch (add + change + stop) writes standard R4 with If-Match and reconciles
         state["writes"].clear()
         fhir_active = FHIRClinicalSystem(
             base_url, "site-fhir", write_capabilities=("revise_orders",), order_write_status="active",
         )
+        state["meds"]["ord-2"]["meta"]["versionId"] = "5"
+        with self.assertRaisesRegex(ValueError, "reviewed target and version"):
+            fhir_active.apply(prop, "idem-batch-stale", None)
+        self.assertEqual(state["writes"], [])
+        state["meds"]["ord-2"]["meta"]["versionId"] = "4"
         receipt = fhir_active.apply(prop, "idem-batch-1", None)
         self.assertEqual(receipt.state, "entered")
         self.assertEqual(len(receipt.trace_refs), 3)
@@ -316,3 +324,4 @@ class FHIRClinicalSystemTests(unittest.TestCase):
         self.assertEqual(rb.state, "entered")
         self.assertEqual(rb.proposal_digest, prop.digest)
         self.assertEqual(rb.visible_payload, prop.payload)
+        self.assertIn(rb.resource_version_ref, rb.trace_refs)

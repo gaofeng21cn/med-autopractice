@@ -34,6 +34,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.mode == "site":
             if not args.site:
                 parser.error("--site is required when --mode site")
+            if args.transport != "stdio":
+                parser.error("private site mode requires the local stdio transport")
             site_dir = args.site.expanduser().resolve()
             runtime = build_site_runtime(site_dir)
         else:

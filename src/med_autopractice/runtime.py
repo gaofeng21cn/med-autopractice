@@ -103,7 +103,8 @@ class TaskRuntime:
                 f"{request.capability_id} is a read-only workflow and has no "
                 "execution policy yet"
             )
-        return self.view(self.engine.start(request, auto_submit=auto_submit))
+        with self._operation(request.request_id):
+            return self.view(self.engine.start(request, auto_submit=auto_submit))
 
     def show(self, task_id: str) -> dict:
         return self.view(self.engine.get(task_id))

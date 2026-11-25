@@ -272,10 +272,11 @@
 
       const pendingRpc = new Map();
       let nextRpcId = 1;
+      let hostOrigin = null;
 
       function postToHost(payload) {
         if (hasHostBridge) {
-          window.parent.postMessage(payload, "*");
+          window.parent.postMessage(payload, hostOrigin && hostOrigin !== "null" ? hostOrigin : "*");
         }
       }
 
@@ -288,8 +289,10 @@
       }
 
       window.addEventListener("message", function (ev) {
-        const msg = ev && ev.data;
-        if (!msg || typeof msg !== "object") return;
+        if (!hasHostBridge || ev.source !== window.parent) return;
+        if (hostOrigin !== null && ev.origin !== hostOrigin) return;
+        const msg = ev.data;
+        if (!msg || msg.jsonrpc !== "2.0") return;
 
         if (msg.id !== undefined && msg.id !== null && !msg.method) {
           const pending = pendingRpc.get(msg.id);
@@ -298,12 +301,14 @@
             if (msg.error) {
               pending.reject(new Error(msg.error.message || JSON.stringify(msg.error)));
             } else {
+              if (hostOrigin === null) hostOrigin = ev.origin;
               pending.resolve(msg.result);
             }
           }
           return;
         }
 
+        if (!state.hostInitialized) return;
         if (msg.method === "ping" && msg.id !== undefined && msg.id !== null) {
           postToHost({ jsonrpc: "2.0", id: msg.id, result: {} });
           return;
@@ -360,6 +365,7 @@
 
       async function invokeAction(toolName, toolArgs, httpPath) {
         if (hasHostBridge) {
+          if (!state.hostInitialized) throw new Error("复核宿主尚未连接");
           const res = await hostRequest("tools/call", { name: toolName, arguments: toolArgs });
           if (res && res.isError) {
             const errText = (res.content && res.content[0] && res.content[0].text) || "工具调用失败";

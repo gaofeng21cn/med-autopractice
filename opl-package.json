@@ -164,6 +164,8 @@
       "examples/patterns/modern_spa_his_playbook.json",
       "examples/patterns/win32_cs_playbook.json",
       "examples/patterns/wpf_workstation_playbook.json",
+      "examples/sandbox_his/__init__.py",
+      "examples/sandbox_his/sandbox_engine.py",
       "plugin.json",
       "pyproject.toml",
       "rules/README.md",
@@ -268,7 +270,7 @@
       "examples/synthetic/local_provider.py",
       "examples/synthetic/local_deployment.py"
     ],
-    "digest": "sha256:7ba15c6af81b0ea885228366d59acfcd87e3186e897d7b63bd20744bc3371121"
+    "digest": "sha256:9d5554ed0999e4f069eeab020ebf28475d8cdbb4e3b5e1fac00956f4cdb6b4ca"
   },
   "management_scope": "local_product"
 }

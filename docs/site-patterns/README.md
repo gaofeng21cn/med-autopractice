@@ -14,4 +14,5 @@
 ## 现场复用流程
 
 1. 将模板复制到**仓库外**的本院部署目录 `playbooks/` 中，根据实际控件树/DOM 选择器或 KVM 区域锚点调整 `selector`、`target` 与 `region_hint`。
-2. 保持所有步骤初始 `state` 为 `"unverified"`，运行 `scripts/site_sync.py` 检查结构合规，并运行 `scripts/site_qualify.py` 完成 5 项压测后再在受控范围内晋级为 `"qualified"`。
+2. 保持所有步骤初始 `state` 为 `"unverified"`，运行 `scripts/site_sync.py` 检查结构。用 `scripts/site_qualify.py --sandbox --site <演练目录>` 验证合成病程流程，报告保存在私有目录。
+3. 使用获准的测试环境和实际驱动验证病程草稿。`site_qualify.py --promote` 根据所选病程工作流的身份核对、分页、长文精确录入、原对象回读与人工接管结果更新对应的草稿保存和回读资格。医嘱的录入、调整和停用按本院已批准的流程分别验收。[站点验收要求](../roadmap.md#逐部署资格与运行观察)

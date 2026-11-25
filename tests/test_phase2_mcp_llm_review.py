@@ -390,6 +390,10 @@ for (const id of [
 
 const postedToHost = [];
 const listeners = [];
+const hostOrigin = 'https://mcp-host.example';
+function deliverHostMessage(data) {{
+  listeners.forEach(fn => fn({{ source: window.parent, origin: hostOrigin, data }}));
+}}
 const startRes = {json.dumps(start_res, ensure_ascii=False)};
 const submitRes = {json.dumps(submit_res, ensure_ascii=False)};
 const reviewRes = {json.dumps(review_res, ensure_ascii=False)};
@@ -404,30 +408,27 @@ global.document = {{
 global.window = {{
   addEventListener(ev, fn) {{ if (ev === 'message') listeners.push(fn); }},
   parent: {{
-    postMessage(msg) {{
+    postMessage(msg, targetOrigin) {{
       postedToHost.push(msg);
       if (msg.method === 'ui/initialize') {{
         assert.strictEqual(msg.params.protocolVersion, '2026-01-26');
-        queueMicrotask(() => listeners.forEach(fn => fn({{
-          data: {{
+        queueMicrotask(() => deliverHostMessage({{
             jsonrpc: '2.0', id: msg.id,
             result: {{
               protocolVersion: '2026-01-26',
               hostCapabilities: {{ serverTools: {{}} }},
               hostContext: {{ theme: 'dark', styles: {{ variables: {{ '--color-background-primary': '#111' }} }} }}
             }}
-          }}
-        }})));
+        }}));
       }} else if (msg.method === 'tools/call') {{
+        assert.strictEqual(targetOrigin, hostOrigin);
         let result;
         if (msg.params.name === 'map_submit_task') {{
           result = submitMode === 'uncertain' ? uncertainRes : submitRes;
         }} else if (msg.params.name === 'map_review_task') {{
           result = reviewRes;
         }}
-        queueMicrotask(() => listeners.forEach(fn => fn({{
-          data: {{ jsonrpc: '2.0', id: msg.id, result }}
-        }})));
+        queueMicrotask(() => deliverHostMessage({{ jsonrpc: '2.0', id: msg.id, result }}));
       }}
     }}
   }}
@@ -442,7 +443,7 @@ global.window = {{
   assert.strictEqual(document.documentElement.style.vars['--color-background-primary'], '#111');
 
   // Deliver tool-result from host
-  listeners.forEach(fn => fn({{ data: {{ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: startRes }} }}));
+  deliverHostMessage({{ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: startRes }});
   assert.ok(elements.get('hdr-subject').textContent.includes('synthetic-p3'));
   assert.strictEqual(elements.get('hdr-status').textContent, 'needs_pre_submit_review');
   assert.strictEqual(elements.get('btn-submit').disabled, false);
@@ -455,7 +456,7 @@ global.window = {{
   assert.strictEqual(elements.get('btn-reconcile').disabled, false);
 
   // Re-deliver normal start and submit -> readback evidence rendered -> accept
-  listeners.forEach(fn => fn({{ data: {{ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: startRes }} }}));
+  deliverHostMessage({{ jsonrpc: '2.0', method: 'ui/notifications/tool-result', params: startRes }});
   submitMode = 'normal';
   await elements.get('btn-submit').listeners.click();
   assert.strictEqual(elements.get('hdr-status').textContent, 'needs_clinician_acceptance');

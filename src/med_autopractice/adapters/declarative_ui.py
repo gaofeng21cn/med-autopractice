@@ -127,11 +127,14 @@ class DeclarativeHospitalUI:
         self.playbooks = dict(playbooks)
         self.bindings = {k: dict(v) for k, v in bindings.items()}
 
-    def _playbook(self, playbook_id: str) -> Playbook:
+    def _playbook(self, playbook_id: str, *, read_only: bool = False) -> Playbook:
         try:
-            return self.playbooks[playbook_id]
+            playbook = self.playbooks[playbook_id]
         except KeyError as error:
             raise UIStateError(f"missing declarative playbook: {playbook_id}") from error
+        if read_only and playbook.contains_write:
+            raise UIStateError(f"read-only operation is bound to a write playbook: {playbook_id}")
+        return playbook
 
     def collect(self, subject: SubjectRef, capability_id: str) -> Snapshot:
         binding = self.bindings.get(capability_id) or {}
@@ -147,9 +150,8 @@ class DeclarativeHospitalUI:
         seen_fact_ids: set[str] = set()
 
         for pid in collect_ids:
-            res = self.runner.run(self._playbook(pid), subject)
-            if res.observed_subject is not None and res.observed_subject != subject:
-                raise UIStateError("collect playbook observed mismatched patient or encounter")
+            res = self.runner.run(self._playbook(pid, read_only=True), subject)
+            _resolve_observed_subject(res, subject, strict=True)
             for trace in res.traces:
                 trace_refs.append(trace.trace_ref)
             for key, raw_value in res.extracted.items():
@@ -230,7 +232,7 @@ class DeclarativeHospitalUI:
         readback_id = binding.get("readback")
         if not readback_id:
             raise UIStateError(f"no readback playbook configured for {capability_id}")
-        res = self.runner.run(self._playbook(readback_id), subject, params={"object_ref": object_ref})
+        res = self.runner.run(self._playbook(readback_id, read_only=True), subject, params={"object_ref": object_ref})
         shot_ref = (
             res.screenshot_refs[-1]
             if res.screenshot_refs
@@ -279,7 +281,7 @@ class DeclarativeHospitalUI:
         if not find_id or task.proposal is None:
             return ()
         res = self.runner.run(
-            self._playbook(find_id),
+            self._playbook(find_id, read_only=True),
             task.request.subject,
             params={"proposal_digest": task.proposal.digest},
         )

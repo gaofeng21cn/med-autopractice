@@ -28,6 +28,8 @@ fact = source.read_quantity(subject, observation_id)
 
 读取器处理已知 ID 的单项定量结果，保留比较符、单位及初步结果状态。查询结果清单、组合检验、报告正文、跨系统编号映射与访问授权由站点实现。将结果并入 `Snapshot` 时，按实际取得的资料填写 `coverage` 和缺项。单项结果只证明这一项的取数。[读取组件](../src/med_autopractice/adapters/fhir.py) · [FHIR R4 Observation](https://hl7.org/fhir/R4/observation.html)
 
+`FHIRClinicalSystem` 默认只读。站点开放写入前，须验证 FHIR 服务对条件创建 `If-None-Exist` 和版本条件更新 `If-Match` 的支持。新增用创建条件绑定幂等键。调整和停用需要已经纳入医生审阅的目标资源版本，任一目标在写入前版本不符时，整批停止。写入期间结果不确定时，按原任务核对整批资源及版本。[FHIR 临床适配器](../src/med_autopractice/adapters/fhir.py) · [FHIR R4 条件写入](https://hl7.org/fhir/R4/http.html#ccreate)
+
 ## 把中间件和业务工作流连接起来
 
 1. 在外部部署档案中给一项依赖填入 `transport`，再运行 `scripts/site_plan.py` 查看该工作流需要的其他来源。已有 profile 可继续使用，未指定通道的步骤会显示 `null`。[合成部署演练](site-integration.md#运行合成部署示例)

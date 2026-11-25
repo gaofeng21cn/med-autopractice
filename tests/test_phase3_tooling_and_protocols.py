@@ -49,6 +49,18 @@ def _prepare_observed_site(root: Path, *, long_text_qualified: bool = True) -> t
             item["transport"] = "computer_use"
     (site / "dependencies.json").write_text(json.dumps(deps, ensure_ascii=False, indent=2), encoding="utf-8")
 
+    verify_step = {"id": "verify", "intent": "核对患者和就诊", "primitive": "verify_subject",
+                   "selector": "#patient-header", "region_hint": [0, 0, 310, 36],
+                   "expect_text": "*", "effect": "read_only",
+                   "on_failure": "stop", "state": "verified"}
+    read_object_steps = [
+        {"id": key, "intent": f"读取{key}", "primitive": "read_text", "selector": selector, "region_hint": region,
+         "extract_key": key, "expect_text": "*", "effect": "read_only", "on_failure": "stop", "state": "verified"}
+        for key, selector, region in (
+            ("object_ref", "#object-ref", [310, 450, 550, 475]),
+            ("state", "#object-state", [310, 410, 450, 449]),
+        )
+    ]
     collect_doc = {
         "schema_version": "map-site-playbook.v2",
         "playbook_id": "collect-labs",
@@ -56,6 +68,7 @@ def _prepare_observed_site(root: Path, *, long_text_qualified: bool = True) -> t
         "title": "采集实验室检验",
         "systems": ["inpatient_ehr"],
         "steps": [
+            verify_step,
             {"id": "dismiss", "intent": "关闭弹窗", "primitive": "handle_dialog",
              "dialog_rules": [{"trigger_text": "提示弹窗", "action": "dismiss", "target": "确定"}],
              "expect_text": "住院病历工作站", "effect": "read_only", "on_failure": "stop", "state": "verified"},
@@ -71,12 +84,14 @@ def _prepare_observed_site(root: Path, *, long_text_qualified: bool = True) -> t
         "title": "写入病程草稿",
         "systems": ["inpatient_ehr"],
         "steps": [
+            verify_step,
             {"id": "enter", "intent": "输入病程正文", "primitive": "input_text",
              "selector": "#note-editor", "target": "病程编辑器", "region_hint": [40, 160, 540, 360],
              "text_param": "draft_text", "expect_text": "患者", "effect": "draft_write", "on_failure": "stop", "state": "verified"},
             {"id": "save", "intent": "点击保存草稿", "primitive": "click",
              "selector": "#save-draft", "target": "保存草稿", "expect_text": "已保存",
              "effect": "draft_write", "on_failure": "stop", "evidence": "screenshot_ref", "state": "verified"},
+            *read_object_steps,
         ],
     }
     readback_doc = {
@@ -86,6 +101,8 @@ def _prepare_observed_site(root: Path, *, long_text_qualified: bool = True) -> t
         "title": "回读病程正文",
         "systems": ["inpatient_ehr"],
         "steps": [
+            verify_step,
+            *read_object_steps,
             {"id": "read", "intent": "读取编辑器", "primitive": "read_text",
              "selector": "#note-editor", "region_hint": [40, 160, 540, 360],
              "extract_key": "draft_text", "expect_text": "患者", "effect": "read_only", "on_failure": "stop",
@@ -252,11 +269,19 @@ class Phase3ToolingAndProtocolsTests(unittest.TestCase):
 
             cli_ok = subprocess.run([
                 sys.executable, str(ROOT / "scripts/site_qualify.py"),
-                "--site", str(cli_site), "--sandbox", "--handoff-mode", "synthetic", "--promote",
+                "--site", str(cli_site), "--sandbox", "--handoff-mode", "synthetic",
             ], capture_output=True, text=True, check=True)
             cli_report = json.loads(cli_ok.stdout)
             self.assertTrue(cli_report["passed"])
-            self.assertEqual(set(cli_report["promoted_dependencies"]), {"save_inpatient_note_draft", "readback_inpatient_note"})
+            self.assertEqual(cli_report["promoted_dependencies"], [])
+            sandbox_promotion = subprocess.run([
+                sys.executable, str(ROOT / "scripts/site_qualify.py"),
+                "--site", str(cli_site), "--sandbox", "--promote",
+            ], capture_output=True, text=True)
+            self.assertNotEqual(sandbox_promotion.returncode, 0)
+            self.assertIn("requires a real driver", sandbox_promotion.stderr)
+            profile = json.loads((cli_site / "dependencies.json").read_text(encoding="utf-8"))
+            self.assertTrue(all(dep["state"] == "observed" for dep in profile["dependencies"]))
 
             # 5. Interactive handoff mode verifies real check_human_interrupt transition paused -> recovered
             sb_int = SyntheticHISSandbox()
