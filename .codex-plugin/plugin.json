@@ -1,6 +1,6 @@
 {
   "name": "med-autopractice",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Clinician-directed agent for medical records, order review and hospital system integration.",
   "author": {
     "name": "Gao Feng",
