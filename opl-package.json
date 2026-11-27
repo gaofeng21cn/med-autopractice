@@ -2,7 +2,7 @@
   "schema_version": "opl.package.v2",
   "identity": {
     "id": "med-autopractice",
-    "version": "0.1.7",
+    "version": "0.1.8",
     "intent": "extension",
     "name": {
       "zh-CN": "Med Auto Practice",
