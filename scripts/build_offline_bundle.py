@@ -49,12 +49,13 @@ def _check_replacement(dest: Path, overwrite: bool) -> None:
     try:
         manifest = json.loads((dest / "bundle-manifest.json").read_text(encoding="utf-8"))
         package = json.loads((dest / "opl-package.json").read_text(encoding="utf-8"))
-        lock = package["content_lock"]
+        identity = package["identity"]
+        lock = json.loads((dest / "contracts/package_content_lock.json").read_text(encoding="utf-8"))
         if (manifest["schema_version"] != _BUNDLE_SCHEMA or manifest["package_id"] != "med-autopractice"
-                or package["package_id"] != manifest["package_id"] or manifest["version"] != package["version"]
+                or identity["id"] != manifest["package_id"] or manifest["version"] != identity["version"]
                 or manifest["content_lock_digest"] != lock["digest"]):
             raise ValueError("bundle and package identity differ")
-        managed = {"bundle-manifest.json", "opl-package.json", *lock["paths"]}
+        managed = {"bundle-manifest.json", "opl-package.json", "contracts/package_content_lock.json", *lock["paths"]}
         managed.update(entry["path"] for entry in manifest["wheelhouse"])
     except (OSError, KeyError, TypeError, ValueError) as error:
         raise ValueError(f"refusing --force overwrite of an unrecognized bundle: {dest}") from error
@@ -103,8 +104,10 @@ def build_offline_bundle(
         _check_archive_replacement(archive_path, dest, overwrite)
 
     package = json.loads((repo_root / "opl-package.json").read_text(encoding="utf-8"))
-    lock_paths = list(package["content_lock"]["paths"])
-    all_paths = ["opl-package.json", *lock_paths]
+    identity = package["identity"]
+    lock = json.loads((repo_root / "contracts/package_content_lock.json").read_text(encoding="utf-8"))
+    lock_paths = list(lock["paths"])
+    all_paths = ["opl-package.json", "contracts/package_content_lock.json", *lock_paths]
 
     dest.parent.mkdir(parents=True, exist_ok=True, mode=0o755)
     stage_dir = Path(tempfile.mkdtemp(prefix=f".{dest.name}.stage-", dir=str(dest.parent)))
@@ -146,11 +149,11 @@ def build_offline_bundle(
 
         manifest = {
             "schema_version": _BUNDLE_SCHEMA,
-            "package_id": package["package_id"],
-            "version": package["version"],
+            "package_id": identity["id"],
+            "version": identity["version"],
             "created_at": datetime.now(timezone.utc).isoformat(),
             "min_python": "3.10",
-            "content_lock_digest": package["content_lock"]["digest"],
+            "content_lock_digest": lock["digest"],
             "files_count": len(file_entries),
             "files": file_entries,
             "wheelhouse": wheel_entries,
@@ -225,10 +228,12 @@ def verify_offline_bundle(bundle_dir: Path) -> dict:
     try:
         verify_package(root)
         package = json.loads((root / "opl-package.json").read_text(encoding="utf-8"))
-        lock = package["content_lock"]
-        if (len(files) != manifest["files_count"] or [item["path"] for item in files] != ["opl-package.json", *lock["paths"]]
+        identity = package["identity"]
+        lock = json.loads((root / "contracts/package_content_lock.json").read_text(encoding="utf-8"))
+        expected_paths = ["opl-package.json", "contracts/package_content_lock.json", *lock["paths"]]
+        if (len(files) != manifest["files_count"] or [item["path"] for item in files] != expected_paths
                 or manifest["content_lock_digest"] != lock["digest"]
-                or manifest["package_id"] != package["package_id"] or manifest["version"] != package["version"]):
+                or manifest["package_id"] != identity["id"] or manifest["version"] != identity["version"]):
             mismatches.append("package_manifest_mismatch")
     except (OSError, KeyError, TypeError, ValueError):
         mismatches.append("package_content_lock_mismatch")

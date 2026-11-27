@@ -7,11 +7,6 @@ from hashlib import sha256
 import json
 from typing import Any
 
-try:
-    from opl_framework.controlled_apply import compute_proposal_digest as _framework_proposal_digest
-except ImportError:
-    _framework_proposal_digest = None
-
 
 @dataclass(frozen=True)
 class SubjectRef:
@@ -102,9 +97,8 @@ class Proposal:
             "knowledge_refs": self.knowledge_refs,
             "schema_version": self.schema_version,
         }
-        if _framework_proposal_digest is not None:
-            return _framework_proposal_digest(body)
-        return sha256(json.dumps(body, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
+        if isinstance(body, dict):
+            return sha256(json.dumps(body, sort_keys=True, ensure_ascii=False, allow_nan=False).encode()).hexdigest()
 
 
 @dataclass(frozen=True)

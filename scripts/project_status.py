@@ -20,13 +20,12 @@ def read_json(relative):
 def inspect_project():
     package = verify_package(ROOT)
     manifest = read_json('agent/manifest.json')
-    for key in ('capabilities_ref', 'contract_ref', 'skill_ref', 'plugin_ref', 'knowledge_ref'):
+    for key in ('capabilities_ref', 'contract_ref', 'skill_ref', 'package_ref', 'knowledge_ref'):
         path = (ROOT / manifest[key]).resolve()
         if not path.is_relative_to(ROOT) or not path.is_file():
             raise ValueError(f'无效项目引用: {key}')
-    plugin = read_json(manifest['plugin_ref'])
-    if plugin['version'] != manifest['version']:
-        raise ValueError('插件与 Agent 清单版本不一致')
+    if package['version'] != manifest['version']:
+        raise ValueError('软件包与 Agent 清单版本不一致')
     catalog = read_json(manifest['capabilities_ref'])
     capabilities = catalog['capabilities']
     ids = [item['id'] for item in capabilities]

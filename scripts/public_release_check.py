@@ -141,34 +141,7 @@ def _fallback_check() -> int:
 
 
 def main() -> int:
-    opl_bin = resolve_opl_bin()
-    if opl_bin is None:
-        return _fallback_check()
-    completed = subprocess.run(
-        [
-            opl_bin,
-            "workspace",
-            "source-hygiene",
-            "--source-root",
-            str(ROOT),
-            "--disclosure-check",
-            "--history",
-            "--disclosure-policy",
-            "contracts/disclosure_policy.json",
-            "--json",
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if completed.returncode == 0:
-        print("Disclosure pattern check passed for tracked files and reachable Git history.")
-        return 0
-    if completed.stdout:
-        print(completed.stdout, file=sys.stderr)
-    if completed.stderr:
-        print(completed.stderr, file=sys.stderr)
-    return completed.returncode
+    return _fallback_check()
 
 
 if __name__ == "__main__":

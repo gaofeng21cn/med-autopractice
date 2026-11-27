@@ -10,7 +10,6 @@
   "capabilities_ref": "contracts/capabilities.json",
   "contract_ref": "docs/agent-contract.md",
   "skill_ref": "skills/med-autopractice/SKILL.md",
-  "plugin_ref": ".codex-plugin/plugin.json",
   "runtime_ref": "src/med_autopractice/runtime.py",
   "knowledge_ref": "src/med_autopractice/knowledge.py",
   "integration": {

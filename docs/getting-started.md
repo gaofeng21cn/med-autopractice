@@ -1,6 +1,6 @@
 # 快速上手
 
-在 OPL 软件中心安装 **Med Auto Practice**，或运行 `opl packages install med-autopractice --json`。安装后打开新对话即可使用 MAP 主 Skill 和医院系统适配 Skill。
+在 OPL 软件中心安装 **Med Auto Practice**，或运行 `opl pack install med-autopractice --json`。安装后打开新对话即可使用 MAP 主 Skill 和医院系统适配 Skill。
 
 ## 在 Codex 中加载 MAP
 

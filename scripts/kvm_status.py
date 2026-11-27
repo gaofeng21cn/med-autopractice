@@ -12,16 +12,19 @@ def _locate_glkvm_receipt(codex_home: Path) -> Path | None:
     opl_bin = os.environ.get("OPL_BIN") or shutil.which("opl")
     if opl_bin:
         try:
-            located = subprocess.run(
-                [opl_bin, "packages", "locate", "glkvm-native", "--json"],
+            inspected = subprocess.run(
+                [opl_bin, "pack", "inspect", "glkvm-native", "--json"],
                 capture_output=True,
                 text=True,
                 timeout=5,
                 check=False,
             )
-            if located.returncode == 0:
-                location = json.loads(located.stdout).get("opl_package_location", {})
-                package_root = location.get("package_root") if location.get("found") else None
+            if inspected.returncode == 0:
+                payload = json.loads(inspected.stdout)
+                installed = payload.get("installed") if isinstance(payload, dict) else None
+                package_root = payload.get("install_path") or (
+                    installed.get("install_path") if isinstance(installed, dict) else None
+                )
                 if isinstance(package_root, str) and package_root:
                     candidate = Path(package_root) / "installation.json"
                     if candidate.is_file():

@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class PackageManagementTests(unittest.TestCase):
     def materialize(self, target):
-        package = json.loads((ROOT / "opl-package.json").read_text())
-        for relative in ["opl-package.json", *package["content_lock"]["paths"]]:
+        lock = json.loads((ROOT / "contracts/package_content_lock.json").read_text())
+        for relative in ["opl-package.json", "contracts/package_content_lock.json", *lock["paths"]]:
             destination = target / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / relative, destination)
@@ -92,8 +92,9 @@ class PackageManagementTests(unittest.TestCase):
             target = folder / "plugin"
             self.materialize(target)
             manifest = json.loads((target / "opl-package.json").read_text())
-            self.assertIn("map-site-adaptation", manifest["exports"]["core_skill_ids"])
-            for skill in manifest["exports"]["core_skill_ids"]:
+            skill_ids = [item["id"] for item in manifest["provides"]["skills"]]
+            self.assertIn("map-site-adaptation", skill_ids)
+            for skill in skill_ids:
                 self.assertTrue((target / "skills" / skill / "SKILL.md").is_file())
             cli = [sys.executable, str(target / "scripts/site_plan.py")]
             env = os.environ.copy()

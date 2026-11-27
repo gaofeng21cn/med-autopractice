@@ -58,4 +58,4 @@ fact = source.read_quantity(subject, observation_id)
 3. 在自有宿主通过 `build_runtime(knowledge, system, audit, store, expected_states)` 组装（`expected_states` 需覆盖工作流中具有写入依赖的能力，适配器通过 `can_apply` 逐项检查写入资格，见[`runtime.py`](../src/med_autopractice/runtime.py)）；
 4. 验证提交前审批、提交后独立回读、超时唯一对象回查以及医生验收。
 
-修改纳入插件的文件后，维护者须更新 `opl-package.json` 中的 `content_lock` 并运行 `python3 scripts/package_metadata.py --write-lock` 与全套测试，见[贡献指南](../CONTRIBUTING.md)。
+修改纳入内容锁的文件后，维护者须更新 `contracts/package_content_lock.json` 并运行 `python3 scripts/package_metadata.py --write-lock` 与全套测试，见[贡献指南](../CONTRIBUTING.md)。

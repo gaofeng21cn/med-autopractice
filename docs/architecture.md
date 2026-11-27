@@ -41,11 +41,11 @@ OPL Framework 从标签对应的提交生成安装包清单，将公开 OCI 制�
 
 插件包含 MAP 主 Skill、医院适配 Skill、Python 代码、脚本、通用合同与相关文档。两个 Skill 都从自身插件根定位资源。显式 `MAP_SOURCE_ROOT` 可用于开发源码。院内 profile、患者资料和任务库位于包外，卸载插件只移除软件载体，原生管理器不负责删除这些业务资料。管理界面分别显示软件状态与临床能力状态。
 
-代码或合同发生变化后，维护者审阅 `content_lock.paths` 并执行 `python3 scripts/package_metadata.py --write-lock`（内部复用 Framework `opl_framework.package_content_lock.content_digest`，独立运行回退标准 SHA-256）更新内容摘要，再运行项目检查及相关测试。消费方以 Package ID、版本、精确源内容和 native readback 判断同一安装对象。
+代码或合同发生变化后，维护者审阅 `contracts/package_content_lock.json` 的路径清单并执行 `python3 scripts/package_metadata.py --write-lock`（使用标准 SHA-256 哈希）更新内容摘要，再运行项目检查及相关测试。消费方以 Package ID、版本、精确源内容和 native readback 判断同一安装对象。
 
 ### 与 OPL 统一知识来源的边界
 
-MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_autopractice/knowledge.py` 的薄客户端读取 OPL Framework 公共来源接口（优先导入 `opl_framework.knowledge_client.KnowledgeClient`，未导入时降级为 `opl` CLI 子进程调用）：`sources`、`search`、`read-source`、`register` 以及 `propose`、`review`、`apply`、`review-source` 写回命令。Framework 持有来源 registry、grant、接受版本、快照和写回回执；MAP 不创建第二套 registry、索引、缓存或正文副本。使用 `scripts/map_knowledge.py` 时，调用方必须明确提供工作区、可选项目和 OPL CLI，域身份固定为 `med-autopractice`。
+MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_autopractice/knowledge.py` 的薄客户端调用 OPL Framework v2 工作区与来源命令（`opl workspace sources list|add|remove`、`opl workspace snapshot` 与 `opl workspace writeback propose|commit`）。Framework 持有来源 registry、grant、接受版本、快照和写回回执；MAP 不创建第二套 registry、索引、缓存或正文副本。使用 `scripts/map_knowledge.py` 时，调用方必须明确提供工作区与 OPL CLI。
 
 医院系统的正式患者事实、采集包、院内制度与页面操作 JSON 仍由医院/部署 owner 管理。`Snapshot` 是带患者/就诊版本的本次任务事实，不能当作长期知识；site profile、survey 和 playbook 也继续走 MAP 的外部部署合同，不自动注册为个人知识。需要把可复用正文交给医学提案组件时，调用方先从 Framework 获取获授权来源和精确哈希，再把引用作为 `Proposal.knowledge_refs` 传入；真实临床动作仍须独立完成能力资格、医生复核和系统回读。
 
@@ -97,7 +97,7 @@ MAP 的可复用方法、制度说明和医学知识引用可以通过 `src/med_
 
 ## 两个仓库怎样组织
 
-设备控制继续由独立的 `glkvm-native` 项目负责；`scripts/kvm_status.py` 优先通过 `opl packages locate glkvm-native --json` 定位已安装设备包，再回退 `$CODEX_HOME/glkvm-native/installation.json`。Med Auto Practice（MAP）维护临床任务语义、通用适配合同和合成验证，不把任何部署工作区路径写入源码。
+设备控制继续由独立的 `glkvm-native` 项目负责；`scripts/kvm_status.py` 优先通过 `opl pack inspect glkvm-native --json` 定位已安装设备包，再回退 `$CODEX_HOME/glkvm-native/installation.json`。Med Auto Practice（MAP）维护临床任务语义、通用适配合同和合成验证，不把任何部署工作区路径写入源码。
 
 项目入口与运行示例见 [README](../README.md)。Codex 提供对话与复核界面。
 
