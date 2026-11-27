@@ -101,19 +101,19 @@ python3 scripts/site_playbook.py --survey "$map_site_dir/survey.json" \
 
 ## 可复用知识的公共来源入口
 
-跨站点的操作和复核方法由 MAP 维护在随包的[产品知识目录](../contracts/durable_knowledge_catalog.json)。Codex 的两个 Skill 按任务直接读取正文。OPL 环境可用 `opl knowledge list --repo <MAP 包根>` 查看目录，也可按 `site-adaptation` 或 `record-review` 召回本次所需的方法。更新正文时同步更新目录记录的摘要和软件包内容锁。
+跨站点的操作和复核方法由 MAP 维护在随包的[产品知识目录](../contracts/durable_knowledge_catalog.json)。Codex 的两个 Skill 按任务直接读取正文，也可用 `opl pack inspect <MAP 包根> --json` 核对已安装的 MAP 包元信息。更新正文时同步更新目录记录的摘要和 `contracts/package_content_lock.json` 内容锁。
 
-部署操作 JSON 由站点维护。工作区或项目的制度说明、医学资料和其他私有知识通过 Framework 现有 registry 绑定。`scripts/map_knowledge.py` 是无本地存储的 CLI 薄入口，固定消费者域为 `med-autopractice`。读取范围随来源授权及工作区、项目绑定确定，写回须有独立写入 grant。可用 `OPL_BIN` 指定 Framework 的确切可执行文件。
+部署操作 JSON 由站点维护。工作区或项目的制度说明、医学资料和其他私有知识通过 Framework v2 工作区来源绑定。`scripts/map_knowledge.py` 是无本地存储的 CLI 薄入口，封装 `opl workspace sources|snapshot|writeback` 命令。可用 `OPL_BIN` 指定 Framework 的确切可执行文件。
 
 ```sh
 python3 scripts/map_knowledge.py --workspace /private/workspace sources
-python3 scripts/map_knowledge.py --workspace /private/workspace search --query "workflow" --limit 10
-python3 scripts/map_knowledge.py --workspace /private/workspace read-source --id owner.method
+python3 scripts/map_knowledge.py --workspace /private/workspace sources-add --path /private/notes
+python3 scripts/map_knowledge.py --workspace /private/workspace snapshot --stage-run sr-1
 ```
 
-未登记的正文先经 `discover` 取得候选，再由有权维护者按精确摘要和审阅证据使用 `register` 登记原文；已有正文修订使用 `propose` → `review` → `apply`。用户原处修改由 `inspect-source` 与 `review-source` 接受。各命令保持 Framework 原 flags，`--workspace` 和可选 `--project` 放在操作名前，reviewer、review ref、reviewed at、next review at 等放在其后。
+新增授权来源使用 `sources-add`，移除授权使用 `sources-remove`，采集冻结快照使用 `snapshot`，经过审阅的修订写回使用 `writeback-propose` 与 `writeback-commit`。`--workspace` 放在操作名前，其余参数保持 Framework v2 flags。
 
-重新使用已有知识依据前，用 `verify-dependencies --dependencies <JSON 文件>` 核对 `[{"knowledge_id":"…","sha256":"sha256:…"}]` 中的版本、有效性和访问范围。该命令的调用成功与依赖有效是两个结果：只有响应中 `knowledge_dependencies.valid` 为 `true` 才能继续依赖这些来源；`false` 时按 `issues` 重新读取和审阅，不能只检查进程退出码。此入口本身不赋予临床执行资格。
+将快照绑定传给临床动作与提案时，统一由 Framework v2 工作区快照和授权检查保障来源有效性。此入口本身不赋予临床执行资格。
 
 来源与记忆的唯一政策见 [Framework 知识政策](https://github.com/gaofeng21cn/one-person-lab/blob/main/docs/policies/knowledge-source-and-memory-policy.md)，参数和 schema 见[知识来源接口](https://github.com/gaofeng21cn/one-person-lab/blob/main/docs/specs/knowledge-sources.md)。Framework 无可用接口、来源未授权或版本已失效时入口返回错误，不转为直接读文件，也不自动重试未知写入。读取结果可包含私有正文，只交给获授权任务上下文；患者病历、院内截图和 JSON 操作档案继续走原有受控存储。
 

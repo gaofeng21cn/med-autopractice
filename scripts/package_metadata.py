@@ -8,11 +8,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-try:
-    from opl_framework.package_content_lock import content_digest as _framework_content_digest
-except ImportError:
-    _framework_content_digest = None
-
 
 def content_digest(root: Path, paths: list[str]) -> str:
     if not paths or len(paths) != len(set(paths)):
@@ -24,8 +19,6 @@ def content_digest(root: Path, paths: list[str]) -> str:
             raise ValueError("Package content must be ordinary relative files")
         if not file.resolve().is_relative_to(resolved_root):
             raise ValueError("Package content escaped its owner root")
-    if _framework_content_digest is not None:
-        return _framework_content_digest(paths, lambda relative: (root / relative).read_bytes())
     digest = hashlib.sha256()
     for relative in paths:
         for data in (relative.encode("utf-8"), (root / relative).read_bytes()):
@@ -36,30 +29,22 @@ def content_digest(root: Path, paths: list[str]) -> str:
 
 def verify_package(root: Path = ROOT) -> dict:
     package = json.loads((root / "opl-package.json").read_text(encoding="utf-8"))
+    identity = package["identity"]
     agent = json.loads((root / "agent/manifest.json").read_text(encoding="utf-8"))
-    plugin = json.loads((root / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
-    standard_plugin = json.loads((root / "plugin.json").read_text(encoding="utf-8"))
-    marketplace = json.loads((root / ".agents/plugins/marketplace.json").read_text(encoding="utf-8"))
-    if package["package_id"] != agent["agent_id"] or plugin["name"] != package["package_id"]:
-        raise ValueError("Package and plugin identities differ")
-    if not package["version"] == agent["version"] == plugin["version"]:
-        raise ValueError("Package and plugin versions differ")
-    if standard_plugin["name"] != plugin["name"] or standard_plugin["version"] != plugin["version"] or standard_plugin["extensions"]["com.openai"]["interface"] != plugin["interface"]:
-        raise ValueError("Agent Plugins and Codex compatibility metadata differ")
-    entry = marketplace["plugins"]
-    if marketplace["name"] != package["package_id"] or len(entry) != 1 or entry[0]["name"] != plugin["name"] or entry[0]["source"] != {"source": "local", "path": "."}:
-        raise ValueError("Native marketplace does not select this package root")
+    lock = json.loads((root / "contracts/package_content_lock.json").read_text(encoding="utf-8"))
+    if identity["id"] != agent["agent_id"]:
+        raise ValueError("Package and agent identities differ")
+    if identity["version"] != agent["version"]:
+        raise ValueError("Package and agent versions differ")
+    distribution = package.get("distribution") or {}
     for field in ("access_policy_ref", "credential_provider"):
-        if field in package and not (isinstance(package[field], str) and package[field].strip()):
+        if field in distribution and not (isinstance(distribution[field], str) and distribution[field].strip()):
             raise ValueError(f"Package {field} must be a nonempty string when declared")
-    lock = package["content_lock"]
     if lock["algorithm"] != "sha256" or lock["canonicalization"] != "ordered_path_length_file_length_bytes" or lock["digest"] != content_digest(root, lock["paths"]):
         raise ValueError("Package content lock does not match the installed files")
-    return {"package_id": package["package_id"], "display_name": package["display_name"],
-            "description": package["description"], "version": package["version"],
-            "channel": package["publication_channel_admission"],
-            "content_integrity": "verified", "lifecycle_owner": "codex_plugin_manager",
-            "plugin_selector": package["codex_surface"]["configured_codex_plugin_carrier"]["plugin_selector"]}
+    return {"package_id": identity["id"], "display_name": identity["name"]["en-US"],
+            "description": identity["description"]["en-US"], "version": identity["version"],
+            "content_integrity": "verified", "lifecycle_owner": "opl_pack"}
 
 
 def main() -> int:
@@ -67,10 +52,10 @@ def main() -> int:
     parser.add_argument("--write-lock", action="store_true", help="refresh the digest for the already reviewed path list")
     args = parser.parse_args()
     if args.write_lock:
-        file = ROOT / "opl-package.json"
-        package = json.loads(file.read_text(encoding="utf-8"))
-        package["content_lock"]["digest"] = content_digest(ROOT, package["content_lock"]["paths"])
-        file.write_text(json.dumps(package, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        file = ROOT / "contracts/package_content_lock.json"
+        lock = json.loads(file.read_text(encoding="utf-8"))
+        lock["digest"] = content_digest(ROOT, lock["paths"])
+        file.write_text(json.dumps(lock, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(verify_package(), ensure_ascii=False, indent=2))
     return 0
 

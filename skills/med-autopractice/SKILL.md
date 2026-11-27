@@ -32,6 +32,6 @@ description: 使用 Med Auto Practice（MAP）开始或恢复医生主导的临�
 
 ## 按需使用知识和开发资料
 
-需要通用 Markdown 来源时使用 `scripts/map_knowledge.py --workspace <workspace> [--project <project>] sources|search|read-source`。维护知识走同一入口的 `register`、`propose`、`review`、`apply` 或 `review-source`。在启动或修订提案时显式记录 `Proposal.knowledge_refs`，复用前以 `verify-dependencies --dependencies <JSON 文件>` 核对 `knowledge_dependencies.valid`。患者记录和站点资料由其原有受控存储保管。[知识来源与部署](../../docs/site-integration.md)
+需要通用 Markdown 来源时使用 `scripts/map_knowledge.py --workspace <workspace> sources`（对应 Framework v2 `opl workspace sources`）。绑定、冻结快照与写回提案走同一入口的 `sources-add`、`snapshot`、`writeback-propose` 或 `writeback-commit`。在启动或修订提案时显式记录 `Proposal.knowledge_refs`。患者记录和站点资料由其原有受控存储保管。[知识来源与部署](../../docs/site-integration.md)
 
 开发工作流、中间件或宿主适配时按需读取[架构](../../docs/architecture.md)、[业务工作流](../../docs/workflows.md)与[医院接入与二次开发](../../docs/hospital-adapters.md#二次开发)。

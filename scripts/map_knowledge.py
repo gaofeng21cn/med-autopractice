@@ -1,8 +1,8 @@
-"""Use Framework's shared source registry from the MAP direct Skill.
+"""Use Framework v2 workspace commands from the MAP direct Skill.
 
 Place --workspace and optional --project before the operation. Remaining flags
-are passed unchanged to `opl knowledge <operation>`; Framework validates source
-authorization, accepted versions, review evidence and writes to the source owner.
+are mapped to Framework v2 `opl workspace <sources|snapshot|writeback>`; Framework validates source
+authorization, accepted versions, snapshot lineage and writes to the source owner.
 """
 
 import argparse

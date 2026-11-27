@@ -15,23 +15,22 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class KnowledgeSourcesTests(unittest.TestCase):
     @patch("med_autopractice.knowledge.subprocess.run")
-    def test_owner_client_binds_map_identity_and_project_without_local_storage(self, run):
-        response = {"version": "g2", "knowledge_sources": {"items": [], "quality_debt": []}}
+    def test_owner_client_binds_map_identity_without_local_storage(self, run):
+        response = {"ok": True, "sources": []}
         run.return_value = subprocess.CompletedProcess([], 0, json.dumps(response), "")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            client = KnowledgeSources(root, project=root / "project", opl_bin="/test/opl")
+            client = KnowledgeSources(root, opl_bin="/test/opl")
             self.assertEqual(client.run("sources"), response)
             command = run.call_args.args[0]
-            self.assertEqual(command, ["/test/opl", "knowledge", "sources",
-                "--workspace", str(root.resolve()), "--domain", DOMAIN_ID,
-                "--project", str((root / "project").resolve()), "--json"])
+            self.assertEqual(command, ["/test/opl", "workspace", "sources", "list",
+                "--workspace", str(root.resolve()), "--json"])
             self.assertEqual(list(root.iterdir()), [])
 
     @patch("med_autopractice.knowledge.subprocess.run")
     def test_scope_override_is_rejected_before_owner_call(self, run):
         client = KnowledgeSources(Path("/test/workspace"), opl_bin="/test/opl")
-        for option in ("--domain", "--project=/other", "--workspace=/other", "--json"):
+        for option in ("--workspace=/other", "--json"):
             with self.subTest(option=option), self.assertRaises(ValueError):
                 client.run("sources", [option])
         run.assert_not_called()
@@ -39,17 +38,17 @@ class KnowledgeSourcesTests(unittest.TestCase):
     @patch("med_autopractice.knowledge.subprocess.run")
     def test_owner_rejection_has_no_cache_or_automatic_retry(self, run):
         run.return_value = subprocess.CompletedProcess([], 2,
-            json.dumps({"version": "g2", "error": {"message": "synthetic private detail"}}), "")
+            json.dumps({"error": {"message": "synthetic private detail"}}), "")
         client = KnowledgeSources(Path("/test/workspace"), opl_bin="/test/opl")
         with self.assertRaises(KnowledgeCommandError) as caught:
-            client.run("read-source", ["--id", "test.policy"])
+            client.run("snapshot", ["--stage-run", "sr-1"])
         self.assertNotIn("synthetic private detail", str(caught.exception))
         self.assertEqual(run.call_count, 1)
 
-    def test_direct_skill_cli_uses_opl_bin_and_forwards_exact_review_flags(self):
+    def test_direct_skill_cli_uses_opl_bin_and_forwards_exact_v2_flags(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            wrapper = "import json,sys\nprint(json.dumps({'version':'g2','arguments':sys.argv[1:]}))\n"
+            wrapper = "import json,sys\nprint(json.dumps({'ok':True,'arguments':sys.argv[1:]}))\n"
             if os.name == "nt":
                 fake = root / "opl.cmd"
                 (root / "opl.py").write_text(wrapper, encoding="utf-8")
@@ -61,15 +60,11 @@ class KnowledgeSourcesTests(unittest.TestCase):
                 fake.chmod(0o700)
                 expected_files = ["opl"]
             result = subprocess.run([sys.executable, str(ROOT / "scripts/map_knowledge.py"),
-                "--workspace", directory, "register", "--registry", str(root / "registry.json"),
-                "--item", str(root / "item.json"), "--expected-sha256", "sha256:synthetic",
-                "--reviewer", "synthetic-owner", "--review-ref", "synthetic://review",
-                "--reviewed-at", "2026-11-09T00:00:00Z", "--next-review-at", "2027-11-09T00:00:00Z"],
+                "--workspace", directory, "sources-add", "--path", str(root / "notes")],
                 capture_output=True, text=True, env={**os.environ, "OPL_BIN": str(fake)}, check=True)
             arguments = json.loads(result.stdout)["arguments"]
-            self.assertEqual(arguments[:3], ["knowledge", "register", "--workspace"])
-            self.assertEqual(arguments[arguments.index("--domain") + 1], DOMAIN_ID)
-            self.assertEqual(arguments[arguments.index("--review-ref") + 1], "synthetic://review")
+            self.assertEqual(arguments[:4], ["workspace", "sources", "add", "--workspace"])
+            self.assertEqual(arguments[arguments.index("--path") + 1], str(root / "notes"))
             self.assertEqual(sorted(path.name for path in root.iterdir()), expected_files)
 
 
