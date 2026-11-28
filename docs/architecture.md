@@ -24,7 +24,7 @@ MAP 可独立安装和由 Codex 调用，同时遵循 [OPL Agent Apps 标准](ht
 | 能力 | 当前入口与 owner | MAP 的职责与后续接缝 |
 | --- | --- | --- |
 | 安装与调用 | `opl-package.json`、Codex 原生插件/Skill；`scripts/project_status.py`、`scripts/map_runtime.py` | 以稳定 ID `med-autopractice` 管理软件；Framework 投影原生安装与更新状态，不另建安装 registry。临床能力资格继续由 MAP 能力目录决定 |
-| 可复用知识与通用上下文 | Framework `opl knowledge`；`knowledge.py` / `scripts/map_knowledge.py` 薄客户端 | 显式绑定工作区、项目、域和来源版本；医学提案通过现有 `ClinicalKnowledge` 接口消费获准内容与引用，详见下一节 |
+| 可复用知识与通用上下文 | Framework `opl workspace sources|snapshot|writeback`；`knowledge.py` / `scripts/map_knowledge.py` 薄客户端 | 显式绑定工作区、项目、域和来源版本；医学提案通过现有 `ClinicalKnowledge` 接口消费获准内容与引用，详见下一节 |
 | 医院连接与凭证 | 部署获准的原生接口、中间件、Computer Use 宿主或设备后端 | 复用对应提供者的授权与会话，适配器绑定站点、患者、就诊和具体操作 |
 | 后续外部服务连接 | [Framework Connect 公开合同](https://github.com/gaofeng21cn/one-person-lab/blob/main/docs/specs/connection-authorization.md)；实际 provider 保管和续期凭证 | 当前没有外部服务 provider 的生产实现。出现实际需求时绑定已有 capability、连接引用及 grant；缺少入口时与 owner 补齐，不解析宿主凭据文件或新建秘密库 |
 | 任务与人机复核 | MAP `TaskRuntime`、提案摘要、系统回读与医生审阅；Codex 展示 | 保留同一临床任务 owner；当前无独立业务 UI。需要 UI 时先复用宿主/共享视图，携带同一 `task_id` 与提案摘要，回读同一任务结果 |
@@ -35,7 +35,7 @@ MAP 可独立安装和由 Codex 调用，同时遵循 [OPL Agent Apps 标准](ht
 
 `opl-package.json` 持有软件包身份、版本、展示文案和内容锁。OPL 软件中心与 Codex 使用相同的 `med-autopractice` 安装 ID。公开 GitHub `main` 是开发主线，带注释的版本标签锁定发布源码。
 
-OPL Framework 从标签对应的提交生成安装包清单，将公开 OCI 制品发布到 `ghcr.io/gaofeng21cn/one-person-lab-packages/med-autopractice`。软件中心按版本及摘要获取，Codex 也可以直接从仓库安装。用 `python3 scripts/project_status.py --json` 查看当前安装的身份和内容完整性。
+OPL Framework 从标签对应的提交生成安装包清单，将公开 OCI 制品发布到 `ghcr.io/gaofeng21cn/one-person-lab-packages/med-autopractice`。软件中心按版本及摘要获取，开发者源码调试可通过 `opl pack link . --json` 挂载。用 `python3 scripts/project_status.py --json` 查看当前安装的身份和内容完整性。
 
 `visibility=public` 表示软件公开分发。各院保管自己的连接和凭证，并按具体工作流记录验收结果。
 
